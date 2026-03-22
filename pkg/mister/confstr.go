@@ -18,6 +18,7 @@ type ConfStrDB struct {
 // CoreOSD represents one core's parsed OSD menu structure.
 type CoreOSD struct {
 	CoreName   string     `json:"core_name"`
+	RbfName    string     `json:"rbf_name,omitempty"`
 	Repo       string     `json:"repo"`
 	ConfStrRaw string     `json:"conf_str_raw"`
 	Menu       []MenuItem `json:"menu"`
@@ -626,14 +627,22 @@ func GetConfStrDB() (*ConfStrDB, error) {
 }
 
 // LookupCoreOSD finds a core's OSD info by name (case-insensitive).
+// Tries exact match on core_name, then rbf_name, then repo name, then substring matching.
 func LookupCoreOSD(db *ConfStrDB, coreName string) *CoreOSD {
 	target := strings.ToLower(coreName)
+	// Exact match on core_name
 	for i := range db.Cores {
 		if strings.ToLower(db.Cores[i].CoreName) == target {
 			return &db.Cores[i]
 		}
 	}
-	// Also try matching against repo name suffix
+	// Exact match on rbf_name
+	for i := range db.Cores {
+		if db.Cores[i].RbfName != "" && strings.ToLower(db.Cores[i].RbfName) == target {
+			return &db.Cores[i]
+		}
+	}
+	// Match against repo name suffix
 	for i := range db.Cores {
 		repo := db.Cores[i].Repo
 		if idx := strings.LastIndex(repo, "/"); idx >= 0 {
@@ -645,7 +654,87 @@ func LookupCoreOSD(db *ConfStrDB, coreName string) *CoreOSD {
 			}
 		}
 	}
-	return nil
+	// Substring matching
+	for i := range db.Cores {
+		rbf := strings.ToLower(db.Cores[i].RbfName)
+		if rbf != "" && (strings.Contains(rbf, target) || strings.Contains(target, rbf)) {
+			return &db.Cores[i]
+		}
+	}
+	// Fuzzy matching via longest common subsequence ratio
+	normTarget := normalizeForMatch(coreName)
+	if len(normTarget) < 4 {
+		return nil
+	}
+	var bestCore *CoreOSD
+	bestRatio := 0.0
+	const lcsThreshold = 0.85
+	for i := range db.Cores {
+		candidates := []string{db.Cores[i].CoreName, db.Cores[i].RbfName}
+		repo := db.Cores[i].Repo
+		if idx := strings.LastIndex(repo, "/"); idx >= 0 {
+			candidates = append(candidates, RepoToCoreName(repo[idx+1:]))
+		}
+		for _, c := range candidates {
+			nc := normalizeForMatch(c)
+			if nc == "" {
+				continue
+			}
+			ratio := lcsRatio(normTarget, nc)
+			if ratio > lcsThreshold && ratio > bestRatio {
+				bestRatio = ratio
+				bestCore = &db.Cores[i]
+			}
+		}
+	}
+	return bestCore
+}
+
+// normalizeForMatch prepares a string for fuzzy comparison:
+// lowercases, strips "a." prefix, removes non-alpha characters.
+func normalizeForMatch(s string) string {
+	s = strings.ToLower(s)
+	s = strings.TrimPrefix(s, "a.")
+	var sb strings.Builder
+	for _, r := range s {
+		if r >= 'a' && r <= 'z' {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
+}
+
+// lcsRatio returns the longest common subsequence length divided by
+// the length of the shorter string. This measures what fraction of the
+// shorter string appears as a subsequence of the longer one.
+func lcsRatio(a, b string) float64 {
+	m, n := len(a), len(b)
+	if m == 0 || n == 0 {
+		return 0
+	}
+	// Space-optimized LCS: two rows
+	prev := make([]int, n+1)
+	curr := make([]int, n+1)
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			if a[i-1] == b[j-1] {
+				curr[j] = prev[j-1] + 1
+			} else if prev[j] > curr[j-1] {
+				curr[j] = prev[j]
+			} else {
+				curr[j] = curr[j-1]
+			}
+		}
+		prev, curr = curr, prev
+		for j := range curr {
+			curr[j] = 0
+		}
+	}
+	minLen := m
+	if n < m {
+		minLen = n
+	}
+	return float64(prev[n]) / float64(minLen)
 }
 
 // RepoToCoreName extracts a core name from a GitHub repo name.
