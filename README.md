@@ -73,7 +73,7 @@ Agent: Your MiSTer has 70+ systems! Top ones:
   - Amiga: 55,793 ROMs
   ...
 
-You: "Set up Tailscale so I can play from anywhere"
+You: "Set up Tailscale so I can reach the MiSTer from anywhere"
 Agent: Installing Tailscale... Done!
        Please authenticate: https://login.tailscale.com/a/xxx
        After that your MiSTer is reachable from anywhere.
