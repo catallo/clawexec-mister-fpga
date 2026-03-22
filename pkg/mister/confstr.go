@@ -3,6 +3,7 @@ package mister
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -668,16 +669,29 @@ func SetConfStrDBPath(path string) {
 	confstrDBPath = path
 }
 
-// LoadConfStrDB loads the CONF_STR database from disk.
+// LoadConfStrDB loads the CONF_STR database.
+// Priority: disk file (user override) > embedded data.
 func LoadConfStrDB() (*ConfStrDB, error) {
+	// Try disk first (allows user override)
 	data, err := os.ReadFile(confstrDBPath)
-	if err != nil {
-		return nil, fmt.Errorf("reading confstr db: %w", err)
+	if err == nil {
+		var db ConfStrDB
+		if err := json.Unmarshal(data, &db); err != nil {
+			return nil, fmt.Errorf("parsing confstr db from disk: %w", err)
+		}
+		log.Printf("loaded confstr_db from disk (%d cores)", len(db.Cores))
+		return &db, nil
+	}
+
+	// Fall back to embedded data
+	if len(embeddedConfStrDB) == 0 {
+		return nil, fmt.Errorf("no confstr_db available (disk: %v, embedded: empty)", err)
 	}
 	var db ConfStrDB
-	if err := json.Unmarshal(data, &db); err != nil {
-		return nil, fmt.Errorf("parsing confstr db: %w", err)
+	if err := json.Unmarshal(embeddedConfStrDB, &db); err != nil {
+		return nil, fmt.Errorf("parsing embedded confstr db: %w", err)
 	}
+	log.Printf("loaded embedded confstr_db (%d cores)", len(db.Cores))
 	return &db, nil
 }
 
