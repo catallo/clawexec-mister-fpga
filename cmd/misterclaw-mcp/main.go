@@ -249,6 +249,16 @@ func toolsList() []ToolDef {
 				},
 			},
 		},
+		{
+			Name:        "mister_osd_info",
+			Description: "Get the OSD (On-Screen Display) menu structure for the currently loaded core or a specified core. Returns the parsed CONF_STR menu items including options, triggers, file loaders, and sub-pages. Useful for understanding what settings a core supports and what the OSD menu looks like.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"core": map[string]interface{}{"type": "string", "description": "Core name to look up (e.g. 'SNES', 'Genesis', 'NES'). If omitted, uses the currently loaded core."},
+				},
+			},
+		},
 	}
 }
 
@@ -342,6 +352,13 @@ func callTool(params json.RawMessage) MCPToolResult {
 			return errorResult("command is required")
 		}
 		return doShellCommand(cmd)
+
+	case "mister_osd_info":
+		req := map[string]interface{}{"mister": "osd_info"}
+		if v, ok := args["core"].(string); ok && v != "" {
+			req["core"] = v
+		}
+		return doMisterCommand(req, formatOSDInfo)
 
 	default:
 		return errorResult(fmt.Sprintf("unknown tool: %s", p.Name))
@@ -603,6 +620,69 @@ func formatInput(resp map[string]interface{}) MCPToolResult {
 		return textResult(fmt.Sprintf("Pressed combo: %s", strings.Join(keys, "+")))
 	}
 	return textResult("Input sent")
+}
+
+func formatOSDInfo(resp map[string]interface{}) MCPToolResult {
+	if success, ok := resp["success"].(bool); ok && !success {
+		errMsg, _ := resp["error"].(string)
+		return errorResult(errMsg)
+	}
+
+	coreName, _ := resp["core_name"].(string)
+	repo, _ := resp["repo"].(string)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Core: %s (repo: %s)\n\nOSD Menu:\n", coreName, repo))
+
+	menu, _ := resp["menu"].([]interface{})
+	for _, m := range menu {
+		item, ok := m.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		typ, _ := item["type"].(string)
+		name, _ := item["name"].(string)
+		raw, _ := item["raw"].(string)
+
+		switch typ {
+		case "separator":
+			sb.WriteString("  ────────────\n")
+		case "label":
+			sb.WriteString(fmt.Sprintf("  [%s]\n", name))
+		case "option", "option_hidden":
+			values, _ := item["values"].([]interface{})
+			vals := make([]string, len(values))
+			for i, v := range values {
+				vals[i], _ = v.(string)
+			}
+			sb.WriteString(fmt.Sprintf("  Option: %s = [%s]\n", name, strings.Join(vals, ", ")))
+		case "trigger", "trigger_hidden":
+			sb.WriteString(fmt.Sprintf("  Trigger: %s\n", name))
+		case "file_load", "file_load_core":
+			label, _ := item["label"].(string)
+			exts, _ := item["extensions"].([]interface{})
+			extStrs := make([]string, len(exts))
+			for i, e := range exts {
+				extStrs[i], _ = e.(string)
+			}
+			sb.WriteString(fmt.Sprintf("  File: %s (%s)\n", label, strings.Join(extStrs, ", ")))
+		case "mount":
+			label, _ := item["label"].(string)
+			sb.WriteString(fmt.Sprintf("  Mount: %s\n", label))
+		case "sub_page":
+			sb.WriteString(fmt.Sprintf("  Sub-page: %s\n", name))
+		case "reset":
+			sb.WriteString(fmt.Sprintf("  Reset: %s\n", name))
+		case "joystick":
+			sb.WriteString(fmt.Sprintf("  Joystick: %s\n", name))
+		case "dip":
+			sb.WriteString("  DIP switches\n")
+		default:
+			sb.WriteString(fmt.Sprintf("  %s: %s\n", typ, raw))
+		}
+	}
+
+	return textResult(sb.String())
 }
 
 // Result helpers

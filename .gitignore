@@ -27,5 +27,7 @@ vendor/
 # OS
 .DS_Store
 Thumbs.db
-misterclaw
-misterclaw-send
+/misterclaw
+/misterclaw-send
+/confstr-update
+confstr_db.json

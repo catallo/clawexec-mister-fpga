@@ -536,9 +536,70 @@ func (s *Server) handleMiSTer(req Request, send func(interface{})) {
 			})
 		}
 
+	case "osd_info":
+		coreName := req.Core
+		if coreName == "" {
+			// Use currently running core
+			status, err := mister.GetRunningCore()
+			if err != nil {
+				send(map[string]interface{}{"error": "no core specified and " + err.Error()})
+				return
+			}
+			coreName = extractCoreName(status.CoreName)
+		}
+
+		db, err := mister.GetConfStrDB()
+		if err != nil {
+			send(map[string]interface{}{
+				"mister":  "osd_info",
+				"success": false,
+				"error":   fmt.Sprintf("confstr database not available: %v", err),
+			})
+			return
+		}
+
+		osd := mister.LookupCoreOSD(db, coreName)
+		if osd == nil {
+			send(map[string]interface{}{
+				"mister":  "osd_info",
+				"success": false,
+				"error":   fmt.Sprintf("no OSD info found for core: %s", coreName),
+			})
+			return
+		}
+
+		send(map[string]interface{}{
+			"mister":       "osd_info",
+			"success":      true,
+			"core_name":    osd.CoreName,
+			"repo":         osd.Repo,
+			"conf_str_raw": osd.ConfStrRaw,
+			"menu":         osd.Menu,
+		})
+
 	default:
 		send(map[string]interface{}{
 			"error": fmt.Sprintf("unknown mister command: %s", req.MiSTer),
 		})
 	}
+}
+
+// extractCoreName strips date suffixes from core names (e.g. "SNES_20250605" -> "SNES").
+func extractCoreName(name string) string {
+	if idx := strings.LastIndex(name, "_"); idx > 0 {
+		suffix := name[idx+1:]
+		if len(suffix) == 8 {
+			allDigits := true
+			for _, c := range suffix {
+				if c < '0' || c > '9' {
+					allDigits = false
+					break
+				}
+			}
+			if allDigits {
+				return name[:idx]
+			}
+		}
+	}
+	return name
 }

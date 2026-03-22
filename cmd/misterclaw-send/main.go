@@ -75,6 +75,8 @@ func main() {
 		err = cmdInput(cmdArgs)
 	case "shell":
 		err = cmdShell(cmdArgs)
+	case "osd-info":
+		err = cmdOSDInfo(cmdArgs)
 	case "discover":
 		err = cmdDiscover()
 	case "help":
@@ -595,6 +597,78 @@ func cmdInput(args []string) error {
 	return nil
 }
 
+func cmdOSDInfo(args []string) error {
+	coreName, _ := extractFlag(args, "core", "c")
+
+	req := map[string]interface{}{"mister": "osd_info"}
+	if coreName != "" {
+		req["core"] = coreName
+	}
+
+	resp, err := sendRequest(req)
+	if err != nil {
+		return err
+	}
+
+	if jsonFlag {
+		outputJSON(resp)
+		return nil
+	}
+
+	core, _ := resp["core_name"].(string)
+	repo, _ := resp["repo"].(string)
+	fmt.Printf("Core: %s (%s)\n\n", core, repo)
+
+	menu, _ := resp["menu"].([]interface{})
+	for _, m := range menu {
+		item, ok := m.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		typ, _ := item["type"].(string)
+		name, _ := item["name"].(string)
+
+		switch typ {
+		case "separator":
+			fmt.Println("  ────────────")
+		case "label":
+			fmt.Printf("  [%s]\n", name)
+		case "option", "option_hidden":
+			values, _ := item["values"].([]interface{})
+			vals := make([]string, len(values))
+			for i, v := range values {
+				vals[i], _ = v.(string)
+			}
+			fmt.Printf("  Option: %s = [%s]\n", name, strings.Join(vals, ", "))
+		case "trigger", "trigger_hidden":
+			fmt.Printf("  Trigger: %s\n", name)
+		case "file_load", "file_load_core":
+			label, _ := item["label"].(string)
+			exts, _ := item["extensions"].([]interface{})
+			extStrs := make([]string, len(exts))
+			for i, e := range exts {
+				extStrs[i], _ = e.(string)
+			}
+			fmt.Printf("  File: %s (%s)\n", label, strings.Join(extStrs, ", "))
+		case "mount":
+			label, _ := item["label"].(string)
+			fmt.Printf("  Mount: %s\n", label)
+		case "sub_page":
+			fmt.Printf("  Sub-page: %s\n", name)
+		case "reset":
+			fmt.Printf("  Reset: %s\n", name)
+		case "joystick":
+			fmt.Printf("  Joystick: %s\n", name)
+		case "dip":
+			fmt.Println("  DIP switches")
+		default:
+			raw, _ := item["raw"].(string)
+			fmt.Printf("  %s: %s\n", typ, raw)
+		}
+	}
+	return nil
+}
+
 func printHelp() {
 	fmt.Print(`MisterClaw — Remote control for MiSTer-FPGA retro gaming platform.
 
@@ -612,6 +686,7 @@ COMMANDS:
   screenshot    Take a screenshot (returns PNG)
   info          System information
   input         Send keyboard input (key/raw/combo)
+  osd-info      Show OSD menu structure for current or specified core
   tailscale     Tailscale VPN management (setup/status/start/stop)
   shell         Execute shell command on MiSTer-FPGA
   discover      Scan local network for MiSTer-FPGA servers
@@ -637,6 +712,8 @@ EXAMPLES:
   misterclaw-send input key osd
   misterclaw-send input raw 28
   misterclaw-send input combo leftalt f12
+  misterclaw-send osd-info
+  misterclaw-send osd-info --core SNES
   misterclaw-send shell "ls /media/fat/games/"
 
 AGENT NOTES:
@@ -752,6 +829,13 @@ func BuildRequest(cmd string, args []string) (map[string]interface{}, error) {
 		default:
 			return nil, fmt.Errorf("unknown input mode: %s", mode)
 		}
+	case "osd-info":
+		coreName, _ := extractFlag(args, "core", "c")
+		req := map[string]interface{}{"mister": "osd_info"}
+		if coreName != "" {
+			req["core"] = coreName
+		}
+		return req, nil
 	case "tailscale":
 		if len(args) == 0 {
 			return nil, fmt.Errorf("tailscale requires an action")

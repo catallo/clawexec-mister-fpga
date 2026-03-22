@@ -13,6 +13,7 @@ Same TCP/JSON protocol as the Flutter GUI — existing `clawexec-send` client wo
 |--------|---------|--------|
 | `misterclaw` | Server — runs on MiSTer-FPGA | `GOOS=linux GOARCH=arm GOARM=7` |
 | `misterclaw-send` | Client CLI — runs anywhere | `GOOS=linux GOARCH=amd64`, `darwin/arm64`, etc. |
+| `confstr-update` | CONF_STR database builder — scrapes GitHub | Any platform |
 
 - **Server** runs on MiSTer-FPGA (ARM7, Buildroot Linux, 492 MB RAM), listens on TCP port 9900
 - **Client** runs on any platform (Linux, macOS), connects to server via TCP
@@ -24,6 +25,7 @@ Same TCP/JSON protocol as the Flutter GUI — existing `clawexec-send` client wo
 ```
 cmd/misterclaw/main.go       — Server entry point, flags, signal handling
 cmd/misterclaw-send/main.go  — Client CLI, subcommands, flag parsing
+cmd/confstr-update/main.go   — CONF_STR database builder (scrapes GitHub)
 pkg/
   server/server.go                      — TCP server, JSON protocol (port 9900)
   session/manager.go                    — Session management, per-session locks, sequential execution
@@ -32,6 +34,7 @@ pkg/
     cmd.go                              — /dev/MiSTer_cmd interface (load_core, screenshot trigger)
     input.go                            — Virtual keyboard via /dev/uinput (named keys, raw codes, combos)
     osd.go                              — Framebuffer OSD rendering (8x16 bitmap font)
+    confstr.go                          — CONF_STR parser, OSD menu database loader
     games.go                            — ROM filesystem scanner, search index, MGL generator
     screenshots.go                      — Screenshot capture + read from /media/fat/screenshots/
     system.go                           — System info (temp, RAM, disk, network, uptime)
@@ -49,6 +52,7 @@ pkg/
 - `status` — Show current core and game
 - `tailscale setup|status|start|stop` — Tailscale VPN management
 - `input` — Send keyboard input (key/raw/combo) via virtual uinput device
+- `osd-info` — Show OSD menu structure for current or specified core
 - `shell` — Execute arbitrary shell command on MiSTer-FPGA
 
 ### Server Features (`misterclaw`)
@@ -106,6 +110,9 @@ Newline-delimited JSON over TCP (port 9900). **100% compatible with ClawExec GUI
 {"mister": "tailscale", "action": "status"}
 {"mister": "tailscale", "action": "start"}
 {"mister": "tailscale", "action": "stop"}
+// OSD menu info (from CONF_STR database)
+{"mister": "osd_info"}
+{"mister": "osd_info", "core": "SNES"}
 ```
 
 ## Tailscale Integration
