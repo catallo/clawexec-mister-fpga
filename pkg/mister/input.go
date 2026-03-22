@@ -40,7 +40,14 @@ func getKeyboard() (KeyboardDevice, error) {
 		return nil, fmt.Errorf("creating keyboard device: %w", err)
 	}
 	kbInst = kb
+	// MiSTer needs time to register the new input device
+	time.Sleep(200 * time.Millisecond)
 	return kbInst, nil
+}
+
+// InitKeyboard eagerly creates the keyboard device so MiSTer can register it.
+func InitKeyboard() (KeyboardDevice, error) {
+	return getKeyboard()
 }
 
 // CloseKeyboard closes the shared keyboard device if open.
@@ -149,7 +156,11 @@ func PressKey(name string) error {
 	if err != nil {
 		return err
 	}
-	return kb.KeyPress(code)
+	if err := kb.KeyDown(code); err != nil {
+		return err
+	}
+	time.Sleep(40 * time.Millisecond)
+	return kb.KeyUp(code)
 }
 
 // PressRawKey presses a key by its raw Linux keycode.
@@ -158,7 +169,11 @@ func PressRawKey(code int) error {
 	if err != nil {
 		return err
 	}
-	return kb.KeyPress(code)
+	if err := kb.KeyDown(code); err != nil {
+		return err
+	}
+	time.Sleep(40 * time.Millisecond)
+	return kb.KeyUp(code)
 }
 
 // PressCombo presses a combination of keys by name (e.g. ["leftalt", "f12"]).

@@ -47,6 +47,13 @@ func main() {
 	// Start background system discovery (scans ROM folders, cores, extensions)
 	mister.StartDiscovery()
 
+	// Pre-initialize virtual keyboard so MiSTer has time to register it
+	go func() {
+		if _, err := mister.InitKeyboard(); err != nil {
+			log.Printf("keyboard init: %v (input commands will retry later)", err)
+		}
+	}()
+
 	mgr := session.NewManager(*shell)
 	srv := server.New(mgr)
 
