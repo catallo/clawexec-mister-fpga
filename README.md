@@ -81,14 +81,38 @@ Agent: Installing Tailscale... Done!
 
 ## CLI Client
 
-For systems that don't support MCP, MiSTerClaw also includes a CLI client.
+For agents that have shell access (like OpenClaw, Codex, or Claude Code), the CLI client can be more efficient than MCP — no tool schemas in context, just call it when needed. It's also useful for shell scripts and automation.
 
 ```bash
-misterclaw-send -H mister-fpga search "sonic"
-misterclaw-send -H mister-fpga launch "sonic 2" --system MegaDrive
+# Check what's playing
+misterclaw-send -H mister-fpga status
+
+# Search for games
+misterclaw-send -H mister-fpga search "zelda" --limit 5
+misterclaw-send -H mister-fpga search "sonic" --system MegaDrive
+
+# Launch a game
+misterclaw-send -H mister-fpga launch "super mario world" --system SNES
+
+# List all systems with ROM counts
 misterclaw-send -H mister-fpga systems
+
+# Take a screenshot
 misterclaw-send -H mister-fpga screenshot -o game.png
+
+# System info (CPU, memory, storage, uptime)
+misterclaw-send -H mister-fpga info
+
+# Run shell commands — configure MiSTer.ini, run updates, manage files
+misterclaw-send -H mister-fpga shell "cat /media/fat/MiSTer.ini"
+misterclaw-send -H mister-fpga shell "/media/fat/Scripts/update_all.sh"
+
+# JSON output for scripting
+misterclaw-send -H mister-fpga status --json
+misterclaw-send -H mister-fpga systems --json
 ```
+
+All commands support `--json` for machine-readable output.
 
 ## Installation
 
