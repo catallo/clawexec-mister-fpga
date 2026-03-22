@@ -2,14 +2,14 @@
 
 MiSTerClaw is the first MCP server for MiSTer-FPGA. Control your MiSTer from any AI agent.
 
-![Version](https://img.shields.io/badge/Version-v0.1.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.3.0-blue)
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-ARMv7_(DE10--Nano)-blue)
 
 ## What is this?
 
-MiSTerClaw lets AI agents — Claude, ChatGPT, OpenClaw, Hermes, Cursor, and others — control a MiSTer-FPGA over the network. Launch games, search your ROM library, take screenshots, manage the system, and even set up Tailscale VPN for secure remote access from anywhere. It uses the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) standard, so any MCP-compatible client works out of the box. For agents without MCP support, a CLI client is also included.
+MiSTerClaw lets AI agents — Claude, ChatGPT, OpenClaw, Hermes, Cursor, and others — control a MiSTer-FPGA over the network. Launch games, search your ROM library, take screenshots, read and modify core settings and DIP switches, navigate the OSD menu, manage the system, and even set up Tailscale VPN for secure remote access from anywhere. It uses the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) standard, so any MCP-compatible client works out of the box. For agents without MCP support, a CLI client is also included.
 
 ## MCP Setup
 
@@ -49,6 +49,11 @@ Add MiSTerClaw to your MCP client config:
 | `mister_systems` | List all available systems with ROM counts |
 | `mister_screenshot` | Take a screenshot (returns PNG image) |
 | `mister_info` | System info (hostname, IP, temp, RAM, disks, uptime) |
+| `mister_input` | Send keyboard input (OSD navigation, named keys) |
+| `mister_osd_info` | Query OSD menu structure from CONF_STR database |
+| `mister_osd_visible` | Show only visible OSD menu items based on current config |
+| `mister_cfg_read` | Read core settings (options + DIP switches) |
+| `mister_cfg_write` | Modify core settings with automatic backup |
 | `mister_tailscale` | Manage Tailscale VPN |
 | `mister_shell` | Execute shell commands |
 
@@ -77,6 +82,22 @@ You: "Set up Tailscale so I can reach the MiSTer from anywhere"
 Agent: Installing Tailscale... Done!
        Please authenticate: https://login.tailscale.com/a/xxx
        After that your MiSTer is reachable from anywhere.
+
+You: "What settings does R-Type have?"
+Agent: R-Type (M72 core) has these settings:
+       Core Options:
+         - No Death Mode: Off
+         - Service Mode: Off
+       DIP Switches:
+         - Difficulty: Medium
+         - Coin A: 1 Coin / 1 Credit
+         - Lives: 3
+         - Demo Sounds: On
+         - Continue: Yes
+
+You: "Enable No Death Mode"
+Agent: ⚙️ Set "No Death Mode" to On in R-Type.
+       Reload the core for the change to take effect.
 ```
 
 ## CLI Client
@@ -106,6 +127,20 @@ misterclaw-send -H mister-fpga info
 # Run shell commands — configure MiSTer.ini, run updates, manage files
 misterclaw-send -H mister-fpga shell "cat /media/fat/MiSTer.ini"
 misterclaw-send -H mister-fpga shell "/media/fat/Scripts/update_all.sh"
+
+# Send keyboard input (OSD navigation)
+misterclaw-send -H mister-fpga input key osd
+misterclaw-send -H mister-fpga input combo leftalt f12
+
+# Query OSD menu structure
+misterclaw-send -H mister-fpga osd-info
+misterclaw-send -H mister-fpga osd-info --core SNES
+
+# Read core settings (options + DIP switches)
+misterclaw-send -H mister-fpga cfg-read
+
+# Modify settings
+misterclaw-send -H mister-fpga cfg-write --option "Free Play" --value On
 
 # JSON output for scripting
 misterclaw-send -H mister-fpga status --json
