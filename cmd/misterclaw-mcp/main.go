@@ -228,7 +228,7 @@ func toolsList() []ToolDef {
 		},
 		{
 			Name:        "mister_input",
-			Description: "Send input to MiSTer-FPGA via virtual keyboard or gamepad. Use 'key' for named keyboard keys (osd, menu, confirm, up, down, left, right, coin, start). Use 'raw' for Linux keycodes. Use 'combo' for key combinations (e.g. ['leftalt', 'f12']). Use 'button' for gamepad buttons (a, b, x, y, start, select, l, r, coin). Use 'dpad' for gamepad d-pad (up, down, left, right). The 'button' and 'dpad' fields use the virtual gamepad device, which many arcade cores require for coin/start input.",
+			Description: "Send input to MiSTer-FPGA via virtual keyboard. Use 'key' for named keyboard keys (osd, menu, confirm, up, down, left, right, coin, start). Use 'raw' for Linux keycodes. Use 'combo' for key combinations (e.g. ['leftalt', 'f12']).",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{

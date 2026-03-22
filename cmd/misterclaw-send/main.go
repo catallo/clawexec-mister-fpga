@@ -845,7 +845,7 @@ COMMANDS:
   systems       List available systems and ROM counts
   screenshot    Take a screenshot (returns PNG)
   info          System information
-  input         Send input (key/raw/combo/button/dpad)
+  input         Send input (key/raw/combo)
   osd-info      Show OSD menu structure for current or specified core
   osd-visible   Show only visible OSD menu items (based on CFG state)
   cfg-read      Read current CFG file and decode option values
@@ -875,9 +875,6 @@ EXAMPLES:
   misterclaw-send input key osd
   misterclaw-send input raw 28
   misterclaw-send input combo leftalt f12
-  misterclaw-send input button a
-  misterclaw-send input button coin
-  misterclaw-send input dpad up
   misterclaw-send osd-info
   misterclaw-send osd-info --core SNES
   misterclaw-send osd-visible

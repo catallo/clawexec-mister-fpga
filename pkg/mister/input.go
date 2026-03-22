@@ -1,9 +1,13 @@
 package mister
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/bendahl/uinput"
@@ -22,7 +26,7 @@ type GamepadDevice interface {
 // gamepadCreator is the function used to create a gamepad device.
 // Override in tests to inject a mock.
 var gamepadCreator = func() (GamepadDevice, error) {
-	return uinput.CreateGamepad("/dev/uinput", []byte("misterclaw-pad"), 0x0079, 0x0006)
+	return createMiSTerGamepad()
 }
 
 var (
@@ -63,16 +67,19 @@ func CloseGamepad() {
 }
 
 // GamepadButtons maps friendly button names to Linux BTN codes.
+// MiSTer maps the generic 0079:0006 controller using joystick button codes
+// (BTN_TRIGGER through BTN_BASE4), NOT standard gamepad codes.
+// Default map slot order: [4]=A [5]=B [6]=X [7]=Y [8]=L [9]=R [10]=Select [11]=Start
 var GamepadButtons = map[string]int{
-	"a":      uinput.ButtonSouth,      // 0x130
-	"b":      uinput.ButtonEast,       // 0x131
-	"x":      uinput.ButtonNorth,      // 0x133
-	"y":      uinput.ButtonWest,       // 0x134
-	"start":  uinput.ButtonStart,      // 0x13B
-	"select": uinput.ButtonSelect,     // 0x13A
-	"l":      uinput.ButtonBumperLeft, // 0x136
-	"r":      uinput.ButtonBumperRight, // 0x137
-	"coin":   uinput.ButtonSelect,     // coin maps to Select
+	"a":      293, // BTN_PINKIE  (0x125) - mapped as button A/Fire
+	"b":      292, // BTN_TOP2    (0x124)
+	"x":      291, // BTN_TOP     (0x123)
+	"y":      290, // BTN_THUMB2  (0x122)
+	"l":      289, // BTN_THUMB   (0x121)
+	"r":      288, // BTN_TRIGGER (0x120)
+	"select": 296, // BTN_BASE3   (0x128)
+	"coin":   296, // BTN_BASE3   (0x128) - same as select
+	"start":  297, // BTN_BASE4   (0x129)
 }
 
 // DPadDirections maps direction names to uinput HatDirection values.
@@ -122,6 +129,247 @@ func GamepadDPad(direction string) error {
 	}
 	time.Sleep(40 * time.Millisecond)
 	return gp.HatRelease(dir)
+}
+
+// ---------------------------------------------------------------------------
+// Custom uinput gamepad device for MiSTer
+//
+// MiSTer's controller map for the generic 0079:0006 device expects old-style
+// joystick button codes (BTN_TRIGGER=288 through BTN_BASE4=297). The standard
+// uinput.CreateGamepad only registers modern gamepad codes (BTN_SOUTH=304+),
+// so those events are silently dropped by the kernel. We create the device
+// manually, registering both sets of button codes.
+// ---------------------------------------------------------------------------
+
+// uinput ioctl constants (from linux/uinput.h).
+const (
+	uiDevCreate = 0x5501
+	uiDevDestroy = 0x5502
+	uiSetEvBit  = 0x40045564
+	uiSetKeyBit = 0x40045565
+	uiSetAbsBit = 0x40045567
+
+	evSyn = 0x00
+	evKey = 0x01
+	evAbs = 0x03
+
+	synReport = 0
+
+	btnStatePressed  = 1
+	btnStateReleased = 0
+
+	busUsb = 0x03
+
+	uinputMaxNameSize = 80
+	absSize           = 64
+)
+
+// Absolute axis codes.
+const (
+	axAbsX     = 0x00
+	axAbsY     = 0x01
+	axAbsZ     = 0x02
+	axAbsRX    = 0x03
+	axAbsRY    = 0x04
+	axAbsRZ    = 0x05
+	axAbsHat0X = 0x10
+	axAbsHat0Y = 0x11
+)
+
+type uiInputID struct {
+	Bustype uint16
+	Vendor  uint16
+	Product uint16
+	Version uint16
+}
+
+type uiUserDev struct {
+	Name       [uinputMaxNameSize]byte
+	ID         uiInputID
+	EffectsMax uint32
+	Absmax     [absSize]int32
+	Absmin     [absSize]int32
+	Absfuzz    [absSize]int32
+	Absflat    [absSize]int32
+}
+
+type uiInputEvent struct {
+	Time  syscall.Timeval
+	Type  uint16
+	Code  uint16
+	Value int32
+}
+
+// misterGamepad implements GamepadDevice using raw uinput syscalls.
+type misterGamepad struct {
+	fd *os.File
+}
+
+func createMiSTerGamepad() (GamepadDevice, error) {
+	fd, err := os.OpenFile("/dev/uinput", syscall.O_WRONLY|syscall.O_NONBLOCK, 0660)
+	if err != nil {
+		return nil, fmt.Errorf("open /dev/uinput: %w", err)
+	}
+
+	// Register EV_KEY
+	if err := uiIoctl(fd, uiSetEvBit, uintptr(evKey)); err != nil {
+		fd.Close()
+		return nil, fmt.Errorf("register EV_KEY: %w", err)
+	}
+
+	// Old joystick buttons: BTN_TRIGGER(288) through BTN_BASE4(297)
+	// Modern gamepad buttons: BTN_GAMEPAD(304) through BTN_MODE(316)
+	for code := uint16(288); code <= 297; code++ {
+		if err := uiIoctl(fd, uiSetKeyBit, uintptr(code)); err != nil {
+			fd.Close()
+			return nil, fmt.Errorf("register key %d: %w", code, err)
+		}
+	}
+	for code := uint16(304); code <= 316; code++ {
+		if err := uiIoctl(fd, uiSetKeyBit, uintptr(code)); err != nil {
+			fd.Close()
+			return nil, fmt.Errorf("register key %d: %w", code, err)
+		}
+	}
+	// D-pad buttons (0x220-0x223)
+	for code := uint16(0x220); code <= 0x223; code++ {
+		if err := uiIoctl(fd, uiSetKeyBit, uintptr(code)); err != nil {
+			fd.Close()
+			return nil, fmt.Errorf("register key %d: %w", code, err)
+		}
+	}
+
+	// Register EV_ABS
+	if err := uiIoctl(fd, uiSetEvBit, uintptr(evAbs)); err != nil {
+		fd.Close()
+		return nil, fmt.Errorf("register EV_ABS: %w", err)
+	}
+	for _, axis := range []uint16{axAbsX, axAbsY, axAbsZ, axAbsRX, axAbsRY, axAbsRZ, axAbsHat0X, axAbsHat0Y} {
+		if err := uiIoctl(fd, uiSetAbsBit, uintptr(axis)); err != nil {
+			fd.Close()
+			return nil, fmt.Errorf("register abs %d: %w", axis, err)
+		}
+	}
+
+	// Write the uinput_user_dev struct
+	var name [uinputMaxNameSize]byte
+	copy(name[:], "misterclaw-pad")
+	dev := uiUserDev{
+		Name: name,
+		ID: uiInputID{
+			Bustype: busUsb,
+			Vendor:  0x0079,
+			Product: 0x0006,
+			Version: 1,
+		},
+	}
+	buf := new(bytes.Buffer)
+	if err := binary.Write(buf, binary.LittleEndian, dev); err != nil {
+		fd.Close()
+		return nil, fmt.Errorf("serialize uinput dev: %w", err)
+	}
+	if _, err := fd.Write(buf.Bytes()); err != nil {
+		fd.Close()
+		return nil, fmt.Errorf("write uinput dev: %w", err)
+	}
+
+	// Create the device
+	if err := uiIoctl(fd, uiDevCreate, 0); err != nil {
+		fd.Close()
+		return nil, fmt.Errorf("UI_DEV_CREATE: %w", err)
+	}
+
+	// Give kernel time to register the device
+	time.Sleep(200 * time.Millisecond)
+
+	return &misterGamepad{fd: fd}, nil
+}
+
+func (g *misterGamepad) ButtonPress(key int) error {
+	if err := g.ButtonDown(key); err != nil {
+		return err
+	}
+	return g.ButtonUp(key)
+}
+
+func (g *misterGamepad) ButtonDown(key int) error {
+	return g.sendKeyEvent(uint16(key), btnStatePressed)
+}
+
+func (g *misterGamepad) ButtonUp(key int) error {
+	return g.sendKeyEvent(uint16(key), btnStateReleased)
+}
+
+func (g *misterGamepad) HatPress(direction uinput.HatDirection) error {
+	return g.sendHatEvent(direction, true)
+}
+
+func (g *misterGamepad) HatRelease(direction uinput.HatDirection) error {
+	return g.sendHatEvent(direction, false)
+}
+
+func (g *misterGamepad) Close() error {
+	if err := uiIoctl(g.fd, uiDevDestroy, 0); err != nil {
+		g.fd.Close()
+		return err
+	}
+	return g.fd.Close()
+}
+
+func (g *misterGamepad) sendKeyEvent(code uint16, state int) error {
+	ev := uiInputEvent{Type: evKey, Code: code, Value: int32(state)}
+	if err := g.writeEvent(ev); err != nil {
+		return err
+	}
+	return g.syncEvents()
+}
+
+func (g *misterGamepad) sendHatEvent(direction uinput.HatDirection, press bool) error {
+	var code uint16
+	var value int32
+
+	switch direction {
+	case uinput.HatUp:
+		code, value = axAbsHat0Y, -1
+	case uinput.HatDown:
+		code, value = axAbsHat0Y, 1
+	case uinput.HatLeft:
+		code, value = axAbsHat0X, -1
+	case uinput.HatRight:
+		code, value = axAbsHat0X, 1
+	default:
+		return fmt.Errorf("unknown hat direction: %d", direction)
+	}
+	if !press {
+		value = 0
+	}
+
+	ev := uiInputEvent{Type: evAbs, Code: code, Value: value}
+	if err := g.writeEvent(ev); err != nil {
+		return err
+	}
+	return g.syncEvents()
+}
+
+func (g *misterGamepad) writeEvent(ev uiInputEvent) error {
+	buf := new(bytes.Buffer)
+	if err := binary.Write(buf, binary.LittleEndian, ev); err != nil {
+		return fmt.Errorf("serialize input event: %w", err)
+	}
+	_, err := g.fd.Write(buf.Bytes())
+	return err
+}
+
+func (g *misterGamepad) syncEvents() error {
+	return g.writeEvent(uiInputEvent{Type: evSyn, Code: synReport, Value: 0})
+}
+
+func uiIoctl(f *os.File, cmd, ptr uintptr) error {
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), cmd, ptr)
+	if errno != 0 {
+		return errno
+	}
+	return nil
 }
 
 // KeyboardDevice abstracts uinput.Keyboard for testing.
