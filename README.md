@@ -2,97 +2,139 @@
 
 Remote control server and CLI client for MiSTer-FPGA retro gaming platforms.
 
+![Version](https://img.shields.io/badge/Version-v0.1.0-blue)
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-ARMv7_(DE10--Nano)-blue)
 
-## What is this?
+---
 
-- A **headless TCP server** that runs on MiSTer-FPGA (DE10-Nano)
-- A **dedicated CLI client** to control it from anywhere
-- Speaks a **JSON protocol over TCP** (port 9900)
-- **Zero configuration** needed — works out of the box
-- Built for **AI agents** but also great for humans and scripts
+## For AI Agents
 
-## Why?
+This section is the primary reference for LLMs and AI agents. It contains everything you need to control a MiSTer-FPGA remotely.
 
-- **Remote control** your MiSTer-FPGA from any machine on your network
-- **AI agents** can search your ROM library, launch games, take screenshots
-- **Automated Tailscale VPN setup** — one command to make your MiSTer reachable from anywhere
-- **No dependencies** on the MiSTer side (single static binary, ~3 MB)
+### Quick Reference
 
-## Features
+| Property | Value |
+|----------|-------|
+| Server binary | `clawexec-mister-fpga` |
+| Client binary | `clawexec-mister-fpga-send` |
+| Protocol | Newline-delimited JSON over TCP |
+| Default port | `9900` |
+| Default host | `mister-fpga` (Tailscale hostname, auto-discovered on LAN) |
+| JSON flag | `--json` (or `-j`) for machine-parseable output on any command |
+| Timeout flag | `--timeout 30` (or `-t 30`) recommended for search/launch |
+| Host flag | `--host <ip>` (or `-H <ip>`) — usually not needed |
 
-### Auto-Discovery
+### Installation
 
-On your local network, `--host` is usually not needed. The client automatically finds your MiSTer-FPGA:
+**Server** (on MiSTer-FPGA):
+```bash
+wget -q https://github.com/catallo/clawexec-mister-fpga/releases/latest/download/clawexec-mister-fpga-arm7 -O /tmp/clawexec-mister-fpga && chmod +x /tmp/clawexec-mister-fpga && /tmp/clawexec-mister-fpga --install
+```
+
+**Client** (on your machine):
+```bash
+# Linux amd64:
+wget https://github.com/catallo/clawexec-mister-fpga/releases/latest/download/clawexec-mister-fpga-send-linux-amd64 -O clawexec-mister-fpga-send && chmod +x clawexec-mister-fpga-send
+
+# macOS Apple Silicon:
+wget https://github.com/catallo/clawexec-mister-fpga/releases/latest/download/clawexec-mister-fpga-send-darwin-arm64 -O clawexec-mister-fpga-send && chmod +x clawexec-mister-fpga-send
+```
+
+### All Commands
+
+#### `status` — Current core and game
 
 ```bash
-# No --host needed on LAN — auto-discovers the MiSTer
-$ clawexec-mister-fpga-send status
-Host "mister-fpga" not reachable, scanning local network...
-Auto-discovered MiSTer-FPGA at 10.0.0.8
+clawexec-mister-fpga-send status
+```
+```
 Core: SNES
 Game: /media/fat/games/SNES/Super Mario World (USA).sfc
-
-# Explicitly scan for servers
-$ clawexec-mister-fpga-send discover
-Found 1 MiSTer-FPGA server(s):
-  10.0.0.8:9900 — Core: SNES_20250605
-
-# JSON output for scripts
-$ clawexec-mister-fpga-send discover --json
-[{"host":"10.0.0.8","port":9900,"core":"SNES_20250605"}]
 ```
 
-When Tailscale is configured, the default hostname `mister-fpga` resolves directly and discovery is skipped.
-
-### Launch Games
-
-Fuzzy search across your entire ROM library, filter by system, or use a direct path.
-
 ```bash
-# Fuzzy search — finds best match and launches it
-$ clawexec-mister-fpga-send launch "super mario world" --system SNES
-Launched: Super Mario World (USA)
-
-# Direct path for exact control
-$ clawexec-mister-fpga-send launch --path "/media/usb0/SNES/Super Mario World (USA).sfc" --system SNES
-Launched: Super Mario World (USA)
-
-# Cross-system fuzzy search (no --system)
-$ clawexec-mister-fpga-send launch "sonic 2"
-Launched: Sonic The Hedgehog 2 (World)
+clawexec-mister-fpga-send status --json
 ```
-
-### Search ROM Library
-
-Search across all systems and all storage devices (SD card, USB drives).
-
-```bash
-$ clawexec-mister-fpga-send search "zelda" --system SNES --limit 5
-1. Legend of Zelda, The - A Link to the Past (USA) [SNES, sd]
-2. Zelda no Densetsu - Kamigami no Triforce (Japan) [SNES, sd]
-Found: 2 results
-
-# JSON output for scripts/agents
-$ clawexec-mister-fpga-send search "zelda" --json
+```json
 {
-  "mister": "search",
-  "results": [
-    {"name": "Legend of Zelda, The - A Link to the Past (USA)", "system": "SNES", "path": "/media/fat/games/SNES/...", "location": "sd"},
-    ...
-  ],
-  "total": 12
+  "mister": "status",
+  "core_name": "SNES",
+  "core_path": "/media/fat/_Console/SNES_20250705.rbf",
+  "game_path": "/media/fat/games/SNES/Super Mario World (USA).sfc"
 }
 ```
 
-### List Systems
-
-See all available systems with ROM counts.
+#### `search` — Search ROM library
 
 ```bash
-$ clawexec-mister-fpga-send systems
+clawexec-mister-fpga-send search "zelda" --system SNES --limit 5
+```
+```
+1. Legend of Zelda, The - A Link to the Past (USA) [SNES, sd]
+2. Zelda no Densetsu - Kamigami no Triforce (Japan) [SNES, sd]
+Found: 2 results
+```
+
+```bash
+clawexec-mister-fpga-send search "zelda" --json --timeout 30
+```
+```json
+{
+  "mister": "search",
+  "results": [
+    {"name": "Legend of Zelda, The - A Link to the Past (USA)", "system": "SNES", "path": "/media/fat/games/SNES/Legend of Zelda, The - A Link to the Past (USA).sfc", "location": "sd"},
+    {"name": "Legend of Zelda, The (USA)", "system": "NES", "path": "/media/fat/games/NES/Legend of Zelda, The (USA).nes", "location": "sd"}
+  ],
+  "total": 2
+}
+```
+
+#### `launch` — Launch a game
+
+By fuzzy search (picks best match):
+```bash
+clawexec-mister-fpga-send launch "super mario world" --system SNES
+```
+```
+Launched: Super Mario World (USA)
+```
+
+By direct path:
+```bash
+clawexec-mister-fpga-send launch --path "/media/usb0/SNES/Super Mario World (USA).sfc" --system SNES
+```
+```
+Launched: Super Mario World (USA)
+```
+
+Cross-system fuzzy search (no `--system`):
+```bash
+clawexec-mister-fpga-send launch "sonic 2"
+```
+```
+Launched: Sonic The Hedgehog 2 (World)
+```
+
+```bash
+clawexec-mister-fpga-send launch "castlevania" --system NES --json
+```
+```json
+{
+  "mister": "launch",
+  "success": true,
+  "game": "Castlevania (USA)",
+  "core_name": "NES"
+}
+```
+
+#### `systems` — List available systems and ROM counts
+
+```bash
+clawexec-mister-fpga-send systems
+```
+```
 SNES              892 ROMs (sd)
 MegaDrive         634 ROMs (sd)
 NES               512 ROMs (sd)
@@ -101,21 +143,43 @@ GBA               256 ROMs (usb0)
 PSX                42 ROMs (usb1)
 ```
 
-### Screenshots
-
-Capture the current screen as PNG.
-
 ```bash
-# Save to file
-$ clawexec-mister-fpga-send screenshot --output shot.png
-Screenshot saved: shot.png (148KB, SNES core)
+clawexec-mister-fpga-send systems --json
+```
+```json
+{
+  "mister": "systems",
+  "systems": [
+    {"system": "SNES", "rom_count": 892, "location": "sd"},
+    {"system": "MegaDrive", "rom_count": 634, "location": "sd"},
+    {"system": "NES", "rom_count": 512, "location": "sd"}
+  ]
+}
+```
 
-# Base64 to stdout (for piping/agents)
-$ clawexec-mister-fpga-send screenshot
+#### `screenshot` — Capture current screen as PNG
+
+Base64 to stdout (for piping/agents):
+```bash
+clawexec-mister-fpga-send screenshot
+```
+```
 iVBORw0KGgoAAAANSUhEU...
+```
 
-# JSON with metadata
-$ clawexec-mister-fpga-send screenshot --json
+Save to file:
+```bash
+clawexec-mister-fpga-send screenshot --output shot.png
+```
+```
+Screenshot saved: shot.png (148KB, SNES core)
+```
+
+JSON with metadata:
+```bash
+clawexec-mister-fpga-send screenshot --json
+```
+```json
 {
   "mister": "screenshot",
   "success": true,
@@ -126,194 +190,164 @@ $ clawexec-mister-fpga-send screenshot --json
 }
 ```
 
-### System Info
-
-Temperature, RAM, disk usage, uptime, and network.
+#### `info` — System information
 
 ```bash
-$ clawexec-mister-fpga-send info
+clawexec-mister-fpga-send info
+```
+```
 Hostname: MiSTer
-IP:       192.168.1.100
+IP:       10.0.0.8
 Temp:     52.3°C
-RAM:      312/492 MB free
-Disk:     10240/14800 MB free
-Uptime:   3d 14h 22m
+RAM:      416/492 MB free
+Disk:     /media/fat — 8755/244005 MB free (97% used) [/dev/root]
+Disk:     /media/usb0 — 11452/57449 MB free (79% used) [/dev/sda1]
+Disk:     /media/usb1 — 489/117355 MB free (100% used) [/dev/sdb1]
+Uptime:   28m
 ```
 
-### Status
-
-Check what core and game are currently running.
-
 ```bash
-$ clawexec-mister-fpga-send status
-Core: SNES
-Game: /media/fat/games/SNES/Super Mario World (USA).sfc
-
-$ clawexec-mister-fpga-send status --json
+clawexec-mister-fpga-send info --json
+```
+```json
 {
-  "mister": "status",
-  "core_name": "SNES",
-  "core_path": "/media/fat/_Console/SNES_20250705.rbf",
-  "game_path": "/media/fat/games/SNES/Super Mario World (USA).sfc"
+  "hostname": "MiSTer",
+  "ip": "10.0.0.8",
+  "temp": 52.3,
+  "ram_mb": 492,
+  "ram_free_mb": 416,
+  "disks": [
+    {"mount": "/media/fat", "device": "/dev/root", "total_mb": 244005, "free_mb": 8755, "use_pct": "97%"},
+    {"mount": "/media/usb0", "device": "/dev/sda1", "total_mb": 57449, "free_mb": 11452, "use_pct": "79%"},
+    {"mount": "/media/usb1", "device": "/dev/sdb1", "total_mb": 117355, "free_mb": 489, "use_pct": "100%"}
+  ],
+  "uptime": "28m"
 }
 ```
 
-### Tailscale VPN
-
-Automated Tailscale setup, status, and management.
+#### `tailscale` — VPN management
 
 ```bash
-$ clawexec-mister-fpga-send tailscale setup
+clawexec-mister-fpga-send tailscale setup
+```
+```
 Please authenticate: https://login.tailscale.com/a/abc123def456
 Waiting for authentication...
 Connected! IP: 100.92.156.99
+```
 
-$ clawexec-mister-fpga-send tailscale status
+```bash
+clawexec-mister-fpga-send tailscale status
+```
+```
 Tailscale: running
 IP: 100.92.156.99
 Hostname: mister-fpga
 Online: yes
+```
 
-$ clawexec-mister-fpga-send tailscale stop
+```bash
+clawexec-mister-fpga-send tailscale status --json
+```
+```json
+{
+  "installed": true,
+  "running": true,
+  "ip": "100.92.156.99",
+  "hostname": "mister-fpga",
+  "online": true,
+  "backend_state": "Running"
+}
+```
+
+```bash
+clawexec-mister-fpga-send tailscale start
+clawexec-mister-fpga-send tailscale stop
+```
+```
+Tailscale start: OK
 Tailscale stop: OK
 ```
 
-### Shell Access
-
-Execute any command directly on MiSTer-FPGA.
+#### `shell` — Execute any command on MiSTer-FPGA
 
 ```bash
-$ clawexec-mister-fpga-send shell "ls /media/fat/games/"
+clawexec-mister-fpga-send shell "ls /media/fat/games/"
+```
+```
 SNES
 MegaDrive
 NES
 Gameboy
 GBA
+```
 
-$ clawexec-mister-fpga-send shell "cat /proc/uptime" --json
+```bash
+clawexec-mister-fpga-send shell "cat /proc/uptime" --json
+```
+```json
 {
   "output": "307432.12 290118.45\n",
   "exit_code": 0
 }
 ```
 
-## Installation
-
-### Server (on MiSTer-FPGA)
+#### `discover` — Scan LAN for MiSTer-FPGA servers
 
 ```bash
-# Download to MiSTer and install
-wget -q https://github.com/catallo/clawexec-mister-fpga/releases/latest/download/clawexec-mister-fpga-arm7 -O /tmp/clawexec-mister-fpga
-chmod +x /tmp/clawexec-mister-fpga
-/tmp/clawexec-mister-fpga --install
-
-# That's it! Binary is copied to /media/fat/Scripts/ and autostart is configured.
+clawexec-mister-fpga-send discover
 ```
-
-To uninstall (removes autostart entry, keeps binary):
+```
+Found 1 MiSTer-FPGA server(s):
+  10.0.0.8:9900 — Core: SNES_20250605
+```
 
 ```bash
-/media/fat/Scripts/clawexec-mister-fpga --uninstall
+clawexec-mister-fpga-send discover --json
 ```
-
-### Client (on your machine)
-
-```bash
-# Linux amd64:
-wget https://github.com/catallo/clawexec-mister-fpga/releases/latest/download/clawexec-mister-fpga-send-linux-amd64
-
-# macOS Apple Silicon:
-wget https://github.com/catallo/clawexec-mister-fpga/releases/latest/download/clawexec-mister-fpga-send-darwin-arm64
-
-chmod +x clawexec-mister-fpga-send-*
+```json
+[{"host": "10.0.0.8", "port": 9900, "core": "SNES_20250605"}]
 ```
-
-### Build from Source
-
-```bash
-git clone https://github.com/catallo/clawexec-mister-fpga.git
-cd clawexec-mister-fpga
-
-# Build server (ARM7 for MiSTer)
-GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o clawexec-mister-fpga ./cmd/clawexec-mister-fpga/
-
-# Build client (for your machine)
-go build -ldflags="-s -w" -o clawexec-mister-fpga-send ./cmd/clawexec-mister-fpga-send/
-```
-
-## Tailscale VPN Setup
-
-Make your MiSTer-FPGA reachable from anywhere with one command. On LAN, `--host` is usually not needed thanks to auto-discovery:
-
-```bash
-# Auto-discovers the MiSTer on LAN — no --host needed
-clawexec-mister-fpga-send tailscale setup
-
-# Or specify explicitly
-clawexec-mister-fpga-send --host <mister-local-ip> tailscale setup
-```
-
-This command:
-1. Downloads Tailscale ARM binaries to MiSTer
-2. Starts the Tailscale daemon in userspace mode (no kernel module needed)
-3. Returns an auth URL — open it in your browser to authenticate
-4. Polls until authentication completes
-5. Returns the Tailscale IP address
-
-After setup, your MiSTer is reachable from anywhere on your Tailscale network. The default hostname `mister-fpga` works automatically:
-
-```bash
-# From anywhere on your Tailscale network
-clawexec-mister-fpga-send status
-clawexec-mister-fpga-send launch "castlevania" --system NES
-```
-
-## For AI Agents
-
-This section is for LLMs and AI agents that discover or use this tool.
-
-### Quick Reference
-
-| Property | Value |
-|----------|-------|
-| Binary | `clawexec-mister-fpga-send` |
-| Protocol | TCP/JSON on port 9900 |
-| Default host | `mister-fpga` (Tailscale hostname) |
-| JSON flag | `--json` for machine-parseable output on any command |
-| Timeout | `--timeout 30` recommended for search/launch (ROM scanning can take time) |
 
 ### Common Workflows
 
 #### First-Time Setup
 
 ```bash
-# 1. On LAN, auto-discovery finds the MiSTer — no --host needed
+# 1. Install server on MiSTer-FPGA (SSH in first)
+wget -q https://github.com/catallo/clawexec-mister-fpga/releases/latest/download/clawexec-mister-fpga-arm7 -O /tmp/clawexec-mister-fpga
+chmod +x /tmp/clawexec-mister-fpga
+/tmp/clawexec-mister-fpga --install
+# Binary copied to /media/fat/Scripts/, autostart configured
+
+# 2. Set up Tailscale VPN (on your machine with client installed)
 clawexec-mister-fpga-send tailscale setup
-# → Returns auth URL — show it to the user
+# → Returns auth URL — open it in browser to authenticate
+# → Polls until authenticated, returns Tailscale IP
 
-# 2. After user authenticates, get the Tailscale IP
-clawexec-mister-fpga-send tailscale status
-# → {"running": true, "ip": "100.92.156.99", "hostname": "mister-fpga", "online": true}
+# 3. Get Tailscale IP
+clawexec-mister-fpga-send tailscale status --json
+# → {"running": true, "ip": "100.92.156.99", "hostname": "mister-fpga", "online": true, ...}
 
-# 3. From now on, Tailscale hostname or auto-discovery — no --host needed
+# 4. From now on, default hostname "mister-fpga" or auto-discovery — no --host needed
 clawexec-mister-fpga-send status
 ```
 
-#### Find and Launch a Game
+#### Launch a Game
 
 ```bash
-# 1. Search for the game
-clawexec-mister-fpga-send search "game name" --json --timeout 30
+# 1. Search for the game (use --timeout 30 for large libraries)
+clawexec-mister-fpga-send search "super mario" --json --timeout 30
 # → Returns list of matches with system, path, location
 
 # 2. Launch by fuzzy search (picks best match)
-clawexec-mister-fpga-send launch "game name" --system SNES
+clawexec-mister-fpga-send launch "super mario world" --system SNES
 
 # OR: Launch by exact path
-clawexec-mister-fpga-send launch --path "/media/fat/games/SNES/Game.sfc" --system SNES
+clawexec-mister-fpga-send launch --path "/media/fat/games/SNES/Super Mario World (USA).sfc" --system SNES
 ```
 
-#### Check What's Playing
+#### Check Status
 
 ```bash
 clawexec-mister-fpga-send status --json
@@ -324,18 +358,127 @@ clawexec-mister-fpga-send status --json
 
 ```bash
 clawexec-mister-fpga-send screenshot --json
-# → {"data": "<base64 PNG>", "core": "SNES", "filename": "...", "size": 151632}
+# → {"mister": "screenshot", "success": true, "data": "<base64 PNG>", "core": "SNES", "filename": "...", "size": 151632}
 ```
 
-### Tips
+#### System Diagnostics
 
-- Search is **case-insensitive** and **fuzzy** — partial names work
-- System names: `SNES`, `NES`, `MegaDrive`, `Genesis`, `Gameboy`, `GBA`, `GBC`, `PSX`, `N64`, `SMS`, `GameGear`, `TurboGrafx16`, `NeoGeo`, etc.
-- ROMs can be on SD card (`/media/fat/games/`) or USB drives (`/media/usb0/` through `/media/usb7/`)
-- Screenshots return **base64 PNG** in JSON mode
-- Shell command: `clawexec-mister-fpga-send shell "any linux command"` — full shell access
-- Use `--timeout 30` for search and launch commands (ROM scanning can take time on large libraries)
-- All commands support `--json` for structured output
+```bash
+clawexec-mister-fpga-send info --json
+# → hostname, IP, temp, RAM, all mounted disks, uptime
+```
+
+### System Names
+
+Supported system names for `--system` flag (case-insensitive):
+
+`SNES`, `NES`, `MegaDrive`, `Genesis`, `PSX`, `N64`, `Gameboy`, `GBA`, `GBC`, `SMS`, `GameGear`, `TurboGrafx16`, `S32X`, `WonderSwan`, `WonderSwanColor`
+
+Note: `Genesis` and `MegaDrive` are interchangeable — both use the MegaDrive core. `GBC` uses the Gameboy core. `GameGear` uses the SMS core.
+
+### Error Handling
+
+Errors are returned as JSON with an `"error"` key:
+
+```json
+{"error": "connecting to mister-fpga:9900: dial tcp: lookup mister-fpga: no such host"}
+{"error": "no game found or missing parameters"}
+{"error": "ROM not found: /media/fat/games/SNES/nonexistent.sfc"}
+{"error": "/dev/MiSTer_cmd not found (not running on MiSTer?)"}
+{"error": "unknown system: INVALID"}
+```
+
+The CLI exits with code 1 on error and prints to stderr:
+```
+Error: connecting to mister-fpga:9900: dial tcp: lookup mister-fpga: no such host
+```
+
+### Tips & Gotchas
+
+- **Timeout**: Use `--timeout 30` for `search` and `launch` — ROM scanning can take time on large libraries (thousands of ROMs across multiple USB drives)
+- **Fuzzy matching**: Search is case-insensitive and uses substring matching. All search terms must match (AND logic). Partial names work: `"mario"` finds all Mario games
+- **Multiple disks**: ROMs can be on SD card (`/media/fat/games/`) or USB drives (`/media/usb0/` through `/media/usb7/`). Search scans all locations automatically
+- **Auto-discovery**: On LAN, `--host` is usually not needed. The client probes the default hostname `mister-fpga` first, then scans the local /24 subnet
+- **Screenshots**: Return base64-encoded PNG in JSON mode. Use `--output file.png` to save to disk
+- **Shell command**: `shell "any linux command"` gives full shell access to the MiSTer. Output is streamed
+- **All commands support `--json`** for structured, machine-parseable output
+- **`--path` requires `--system`**: When launching by direct path, you must also specify the system
+- **Cross-system search**: Omit `--system` to search all systems at once
+
+---
+
+## For Humans
+
+### What Is This?
+
+ClawExec for MiSTer-FPGA lets you remotely control your MiSTer-FPGA retro gaming device:
+
+- **Search and launch games** from your ROM library
+- **Take screenshots** of what's on screen
+- **Check system status** — temperature, RAM, disk usage
+- **Set up Tailscale VPN** so your MiSTer is reachable from anywhere
+- **Run shell commands** directly on the MiSTer
+
+It's a tiny server (~3 MB) that runs on MiSTer, and a CLI client you run on your computer. Zero configuration needed.
+
+### Quick Install
+
+**On MiSTer** (SSH in):
+```bash
+wget -q https://github.com/catallo/clawexec-mister-fpga/releases/latest/download/clawexec-mister-fpga-arm7 -O /tmp/clawexec-mister-fpga
+chmod +x /tmp/clawexec-mister-fpga
+/tmp/clawexec-mister-fpga --install
+```
+
+**On your machine**:
+```bash
+# Linux
+wget https://github.com/catallo/clawexec-mister-fpga/releases/latest/download/clawexec-mister-fpga-send-linux-amd64 -O clawexec-mister-fpga-send
+chmod +x clawexec-mister-fpga-send
+
+# macOS
+wget https://github.com/catallo/clawexec-mister-fpga/releases/latest/download/clawexec-mister-fpga-send-darwin-arm64 -O clawexec-mister-fpga-send
+chmod +x clawexec-mister-fpga-send
+```
+
+To uninstall the server (removes autostart, keeps binary):
+```bash
+/media/fat/Scripts/clawexec-mister-fpga --uninstall
+```
+
+### Basic Usage
+
+```bash
+# Check what's playing
+clawexec-mister-fpga-send status
+
+# Search for a game
+clawexec-mister-fpga-send search "zelda"
+
+# Launch a game
+clawexec-mister-fpga-send launch "super mario world" --system SNES
+
+# Take a screenshot
+clawexec-mister-fpga-send screenshot --output shot.png
+
+# System info
+clawexec-mister-fpga-send info
+
+# See available systems
+clawexec-mister-fpga-send systems
+```
+
+### Tailscale Setup
+
+Make your MiSTer reachable from anywhere with one command:
+
+```bash
+clawexec-mister-fpga-send tailscale setup
+```
+
+This downloads Tailscale, starts it, and gives you an auth URL. Open the URL in your browser to authenticate. After that, your MiSTer is reachable from anywhere on your Tailscale network — no `--host` flag needed.
+
+---
 
 ## Protocol Reference
 
@@ -379,6 +522,26 @@ Newline-delimited JSON over TCP (port 9900). Each request is a single JSON objec
 {"error": "description of what went wrong"}
 ```
 
+---
+
+## Building from Source
+
+```bash
+git clone https://github.com/catallo/clawexec-mister-fpga.git
+cd clawexec-mister-fpga
+
+# Build server (ARM7 for MiSTer)
+GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o clawexec-mister-fpga ./cmd/clawexec-mister-fpga/
+
+# Build client (for your machine)
+go build -ldflags="-s -w" -o clawexec-mister-fpga-send ./cmd/clawexec-mister-fpga-send/
+
+# Run tests
+go test ./...
+```
+
+---
+
 ## Architecture
 
 ```
@@ -397,13 +560,7 @@ pkg/
     tailscale.go                        Tailscale VPN: download, setup, start/stop, status
 ```
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Make your changes
-4. Run tests: `go test ./...`
-5. Submit a pull request
+---
 
 ## License
 

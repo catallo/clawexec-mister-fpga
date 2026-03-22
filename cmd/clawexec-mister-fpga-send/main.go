@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var version = "dev"
+const Version = "0.1.0"
 
 // Global flags
 var (
@@ -32,8 +32,14 @@ func main() {
 	flag.IntVar(&timeoutFlag, "timeout", 10, "Timeout in seconds")
 	flag.IntVar(&timeoutFlag, "t", 10, "Timeout in seconds (shorthand)")
 
+	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Usage = func() { printHelp() }
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("clawexec-mister-fpga-send v%s\n", Version)
+		os.Exit(0)
+	}
 
 	args := flag.Args()
 	if len(args) == 0 {
