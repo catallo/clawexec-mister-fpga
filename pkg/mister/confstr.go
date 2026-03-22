@@ -848,9 +848,16 @@ func RepoToCoreName(repoName string) string {
 
 // VisibleMenu returns only the menu items that are visible given the current CFG state.
 // This matches what the MiSTer OSD actually displays.
+// Items with type "hide"/"hide_inverted" are metadata markers (standalone H/h entries
+// with no inner command) and are never shown as menu items.
 func VisibleMenu(core *CoreOSD, cfgData []byte) []MenuItem {
 	var visible []MenuItem
 	for _, item := range core.Menu {
+		// Standalone hide/disable markers are not menu items
+		if item.Type == "hide" || item.Type == "hide_inverted" ||
+			item.Type == "disable" || item.Type == "disable_inverted" {
+			continue
+		}
 		if item.Visible(cfgData) {
 			visible = append(visible, item)
 		}

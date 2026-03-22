@@ -474,6 +474,108 @@ func TestLetterToBit(t *testing.T) {
 	}
 }
 
+func TestVisibleMenu_StandaloneHideFiltered(t *testing.T) {
+	// Standalone H/h entries (with no inner command) should be excluded from VisibleMenu.
+	// These are metadata markers, not actual menu items.
+	core := &CoreOSD{
+		CoreName: "TestCore",
+		Menu: []MenuItem{
+			{Type: "label", Name: "TestCore"},
+			{Type: "option", Name: "Volume", Bit: 1, BitHigh: 2, Values: []string{"Low", "High"}},
+			{Type: "hide", Name: "some metadata", Bit: 5, HideConditions: []HideCondition{{Bit: 5, Type: "hide"}}},
+			{Type: "hide_inverted", Name: "other metadata", Bit: 6, HideConditions: []HideCondition{{Bit: 6, Type: "hide", Inverted: true}}},
+			{Type: "option", Name: "Region", Bit: 3, BitHigh: 4, Values: []string{"US", "JP"}},
+			{Type: "separator"},
+			{Type: "trigger", Name: "Reset", Bit: 0},
+		},
+	}
+
+	cfgData := make([]byte, 16)
+	visible := VisibleMenu(core, cfgData)
+
+	// hide and hide_inverted items should NOT appear
+	for _, v := range visible {
+		if v.Type == "hide" || v.Type == "hide_inverted" {
+			t.Errorf("standalone %s item should be filtered: %s", v.Type, v.Name)
+		}
+	}
+
+	// Volume, Region, separator, trigger should appear
+	names := []string{}
+	for _, v := range visible {
+		if v.Name != "" {
+			names = append(names, v.Name)
+		}
+	}
+	if !containsStr2(names, "Volume") || !containsStr2(names, "Region") || !containsStr2(names, "Reset") {
+		t.Errorf("expected Volume, Region, Reset in visible menu, got: %v", names)
+	}
+}
+
+func TestVisibleMenu_TaitoSJRealWorld(t *testing.T) {
+	// Simulate the real TaitoSJ CONF_STR with visibility conditions.
+	// H0 = hide when bit 0 is 1, h0 = hide when bit 0 is 0.
+	// On real MiSTer hardware, bit 0 is typically set (direct video mode),
+	// so H0 items are hidden and h0 items are visible.
+	items := ParseConfStr("TaitoSJ;;" +
+		"h0O34,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];" +
+		"O5,Orientation,Horz,Vert;" +
+		"O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%;" +
+		"H0OC,Frequency,50Hz,60Hz;" +
+		"H0OF,Autosave Hiscores,Off,On;" +
+		"-;" +
+		"DIP;" +
+		"P1,Pause options;" +
+		"R0,Reset")
+	core := &CoreOSD{
+		CoreName: "TaitoSJ",
+		Menu:     items,
+	}
+
+	// With bit 0 = 0: h0 items hidden, H0 items visible
+	cfgZero := make([]byte, 16)
+	visible := VisibleMenu(core, cfgZero)
+	names := []string{}
+	for _, v := range visible {
+		if v.Name != "" {
+			names = append(names, v.Name)
+		}
+	}
+	// h0 = hide when bit=0, so Aspect ratio should be hidden
+	if containsStr2(names, "Aspect ratio") {
+		t.Errorf("Aspect ratio should be HIDDEN when bit 0 = 0 (h0)")
+	}
+	// H0 = hide when bit=1, so Frequency/Hiscores should be visible
+	if !containsStr2(names, "Frequency") || !containsStr2(names, "Autosave Hiscores") {
+		t.Errorf("H0 items should be visible when bit 0 = 0, got: %v", names)
+	}
+
+	// With bit 0 = 1 (real MiSTer hardware state):
+	// H0 items hidden, h0 items visible — matches the OSD photo
+	cfgSet := make([]byte, 16)
+	SetBit(cfgSet, 0, true)
+	visible = VisibleMenu(core, cfgSet)
+	names = names[:0]
+	for _, v := range visible {
+		if v.Name != "" {
+			names = append(names, v.Name)
+		}
+	}
+
+	// Should be visible
+	for _, want := range []string{"Aspect ratio", "Orientation", "Scandoubler Fx", "Reset"} {
+		if !containsStr2(names, want) {
+			t.Errorf("expected %q in visible menu when bit 0 = 1, got: %v", want, names)
+		}
+	}
+	// Should be hidden (H0: hide when bit 0 = 1)
+	for _, hide := range []string{"Frequency", "Autosave Hiscores"} {
+		if containsStr2(names, hide) {
+			t.Errorf("%q should be HIDDEN when bit 0 = 1 (H0), got visible: %v", hide, names)
+		}
+	}
+}
+
 func containsStr2(list []string, target string) bool {
 	for _, s := range list {
 		if s == target {

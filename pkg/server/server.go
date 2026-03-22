@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-
 	"time"
 
 	"github.com/catallo/misterclaw/pkg/mister"
@@ -618,21 +617,46 @@ func extractCoreName(name string) string {
 	return name
 }
 
-// resolveOSDAndCFG resolves the current core's OSD info and reads its CFG file.
-func (s *Server) resolveOSDAndCFG(req Request, send func(interface{})) (*mister.CoreOSD, []byte, string, bool) {
+// coreContext holds all resolved state for the current core: OSD info, CFG data, DIP data, paths.
+type coreContext struct {
+	OSD     *mister.CoreOSD
+	CFGData []byte
+	CFGPath string
+	MRAPath string // empty if not arcade
+	MRA     *mister.MRA
+	DIPData []byte // nil if no MRA/DIP switches
+	DIPPath string // empty if no MRA
+}
+
+// resolveCore resolves the current core's OSD info, CFG file, and DIP file.
+func (s *Server) resolveCore(req Request, send func(interface{})) (*coreContext, bool) {
 	coreName := req.Core
 	cfgName := ""
+	mraPath := ""
+	var mra *mister.MRA
 	if coreName == "" {
 		status, err := mister.GetRunningCore()
 		if err != nil {
 			send(map[string]interface{}{"error": "no core specified and " + err.Error()})
-			return nil, nil, "", false
+			return nil, false
 		}
 		coreName = extractCoreName(status.CoreName)
 		// CFG name comes from the game (MRA), not the core
 		if status.GamePath != "" {
-			base := filepath.Base(status.GamePath)
-			cfgName = strings.TrimSuffix(base, filepath.Ext(base))
+			if strings.HasSuffix(strings.ToLower(status.GamePath), ".mra") {
+				mraPath = status.GamePath
+				if parsed, err := mister.ParseMRA(status.GamePath); err == nil {
+					mra = parsed
+					if mra.SetName != "" {
+						cfgName = mra.SetName
+					}
+				}
+			}
+			// Fallback: use MRA filename without extension
+			if cfgName == "" {
+				base := filepath.Base(status.GamePath)
+				cfgName = strings.TrimSuffix(base, filepath.Ext(base))
+			}
 		} else {
 			cfgName = coreName
 		}
@@ -643,13 +667,13 @@ func (s *Server) resolveOSDAndCFG(req Request, send func(interface{})) (*mister.
 	db, err := mister.GetConfStrDB()
 	if err != nil {
 		send(map[string]interface{}{"error": fmt.Sprintf("confstr database not available: %v", err)})
-		return nil, nil, "", false
+		return nil, false
 	}
 
 	osd := mister.LookupCoreOSD(db, coreName)
 	if osd == nil {
 		send(map[string]interface{}{"error": fmt.Sprintf("no OSD info found for core: %s", coreName)})
-		return nil, nil, "", false
+		return nil, false
 	}
 
 	cfgPath := mister.CFGPath(cfgName)
@@ -659,57 +683,102 @@ func (s *Server) resolveOSDAndCFG(req Request, send func(interface{})) (*mister.
 		cfgData = make([]byte, 16)
 	}
 
-	return osd, cfgData, cfgPath, true
+	ctx := &coreContext{
+		OSD:     osd,
+		CFGData: cfgData,
+		CFGPath: cfgPath,
+		MRAPath: mraPath,
+		MRA:     mra,
+	}
+
+	// Load DIP data if this is an arcade game with an MRA
+	if mra != nil && mraPath != "" {
+		dipPath := mister.DIPPath(mraPath)
+		ctx.DIPPath = dipPath
+		ctx.DIPData = mister.LoadDIPData(dipPath, mra)
+	}
+
+	return ctx, true
 }
 
 func (s *Server) handleOSDVisible(req Request, send func(interface{})) {
-	osd, cfgData, _, ok := s.resolveOSDAndCFG(req, send)
+	ctx, ok := s.resolveCore(req, send)
 	if !ok {
 		return
 	}
 
-	visible := mister.VisibleMenu(osd, cfgData)
+	visible := mister.VisibleMenu(ctx.OSD, ctx.CFGData)
 	send(map[string]interface{}{
 		"mister":    "osd_visible",
 		"success":   true,
-		"core_name": osd.CoreName,
+		"core_name": ctx.OSD.CoreName,
 		"menu":      visible,
 	})
 }
 
 func (s *Server) handleCFGRead(req Request, send func(interface{})) {
-	osd, cfgData, cfgPath, ok := s.resolveOSDAndCFG(req, send)
+	ctx, ok := s.resolveCore(req, send)
 	if !ok {
 		return
 	}
 
-	// Decode option values from CFG bits
-	options := []map[string]interface{}{}
-	for _, item := range osd.Menu {
+	// Decode core option values from CFG bits
+	settings := []map[string]interface{}{}
+	for _, item := range ctx.OSD.Menu {
 		if item.Type != "option" && item.Type != "option_hidden" {
 			continue
 		}
-		val := mister.GetBitRange(cfgData, item.Bit, item.BitHigh)
+		val := mister.GetBitRange(ctx.CFGData, item.Bit, item.BitHigh)
 		opt := map[string]interface{}{
-			"name":  item.Name,
-			"bit":   item.Bit,
-			"value": val,
+			"name":   item.Name,
+			"bit":    item.Bit,
+			"value":  val,
+			"source": "cfg",
 		}
 		if val < len(item.Values) {
 			opt["value_name"] = item.Values[val]
 		}
-		options = append(options, opt)
+		if len(item.Values) > 0 {
+			opt["values"] = item.Values
+		}
+		settings = append(settings, opt)
 	}
 
-	send(map[string]interface{}{
+	// Include DIP switches from MRA — read from separate .dip data
+	if ctx.MRA != nil {
+		dips := mister.ParseDIPSwitches(ctx.MRA)
+		for _, dip := range dips {
+			val := mister.GetBitRange(ctx.DIPData, dip.Bit, dip.BitHigh)
+			opt := map[string]interface{}{
+				"name":   dip.Name,
+				"bit":    dip.Bit,
+				"value":  val,
+				"source": "dip",
+			}
+			if val < len(dip.Values) {
+				opt["value_name"] = dip.Values[val]
+			}
+			if len(dip.Values) > 0 {
+				opt["values"] = dip.Values
+			}
+			settings = append(settings, opt)
+		}
+	}
+
+	resp := map[string]interface{}{
 		"mister":    "cfg_read",
 		"success":   true,
-		"core_name": osd.CoreName,
-		"cfg_path":  cfgPath,
-		"cfg_hex":   hex.EncodeToString(cfgData),
-		"cfg_size":  len(cfgData),
-		"options":   options,
-	})
+		"core_name": ctx.OSD.CoreName,
+		"cfg_path":  ctx.CFGPath,
+		"cfg_hex":   hex.EncodeToString(ctx.CFGData),
+		"cfg_size":  len(ctx.CFGData),
+		"settings":  settings,
+	}
+	if ctx.DIPPath != "" {
+		resp["dip_path"] = ctx.DIPPath
+		resp["dip_hex"] = hex.EncodeToString(ctx.DIPData)
+	}
+	send(resp)
 }
 
 func (s *Server) handleCFGWrite(req Request, send func(interface{})) {
@@ -722,49 +791,91 @@ func (s *Server) handleCFGWrite(req Request, send func(interface{})) {
 		return
 	}
 
-	osd, cfgData, cfgPath, ok := s.resolveOSDAndCFG(req, send)
+	ctx, ok := s.resolveCore(req, send)
 	if !ok {
 		return
 	}
 
-	item := mister.FindOption(osd, req.Option)
-	if item == nil {
+	// Try CONF_STR options first → write to .CFG file
+	item := mister.FindOption(ctx.OSD, req.Option)
+	if item != nil {
+		valIdx := mister.FindOptionValue(item, req.Value)
+		if valIdx < 0 {
+			send(map[string]interface{}{
+				"mister":  "cfg_write",
+				"success": false,
+				"error":   fmt.Sprintf("value %q not found for option %s (available: %v)", req.Value, req.Option, item.Values),
+			})
+			return
+		}
+
+		mister.SetBitRange(ctx.CFGData, item.Bit, item.BitHigh, valIdx)
+
+		if err := mister.WriteCFG(ctx.CFGPath, ctx.CFGData); err != nil {
+			send(map[string]interface{}{
+				"mister":  "cfg_write",
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
+
 		send(map[string]interface{}{
-			"mister":  "cfg_write",
-			"success": false,
-			"error":   fmt.Sprintf("option not found: %s", req.Option),
+			"mister":      "cfg_write",
+			"success":     true,
+			"core_name":   ctx.OSD.CoreName,
+			"option":      item.Name,
+			"value":       req.Value,
+			"value_index": valIdx,
+			"cfg_path":    ctx.CFGPath,
+			"source":      "cfg",
 		})
 		return
 	}
 
-	valIdx := mister.FindOptionValue(item, req.Value)
-	if valIdx < 0 {
-		send(map[string]interface{}{
-			"mister":  "cfg_write",
-			"success": false,
-			"error":   fmt.Sprintf("value %q not found for option %s (available: %v)", req.Value, req.Option, item.Values),
-		})
-		return
-	}
+	// Try DIP switches from MRA → write to .dip file
+	if ctx.MRA != nil {
+		dips := mister.ParseDIPSwitches(ctx.MRA)
+		dip := mister.FindDIPSwitch(dips, req.Option)
+		if dip != nil {
+			valIdx := mister.FindDIPValue(dip, req.Value)
+			if valIdx < 0 {
+				send(map[string]interface{}{
+					"mister":  "cfg_write",
+					"success": false,
+					"error":   fmt.Sprintf("value %q not found for DIP switch %s (available: %v)", req.Value, req.Option, dip.Values),
+				})
+				return
+			}
 
-	mister.SetBitRange(cfgData, item.Bit, item.BitHigh, valIdx)
+			mister.SetBitRange(ctx.DIPData, dip.Bit, dip.BitHigh, valIdx)
 
-	if err := mister.WriteCFG(cfgPath, cfgData); err != nil {
-		send(map[string]interface{}{
-			"mister":  "cfg_write",
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
+			if err := mister.WriteDIP(ctx.DIPPath, ctx.DIPData); err != nil {
+				send(map[string]interface{}{
+					"mister":  "cfg_write",
+					"success": false,
+					"error":   err.Error(),
+				})
+				return
+			}
+
+			send(map[string]interface{}{
+				"mister":      "cfg_write",
+				"success":     true,
+				"core_name":   ctx.OSD.CoreName,
+				"option":      dip.Name,
+				"value":       req.Value,
+				"value_index": valIdx,
+				"dip_path":    ctx.DIPPath,
+				"source":      "dip",
+			})
+			return
+		}
 	}
 
 	send(map[string]interface{}{
-		"mister":     "cfg_write",
-		"success":    true,
-		"core_name":  osd.CoreName,
-		"option":     item.Name,
-		"value":      req.Value,
-		"value_index": valIdx,
-		"cfg_path":   cfgPath,
+		"mister":  "cfg_write",
+		"success": false,
+		"error":   fmt.Sprintf("option not found: %s (checked CONF_STR options and DIP switches)", req.Option),
 	})
 }
