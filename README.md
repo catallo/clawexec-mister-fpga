@@ -1,6 +1,6 @@
 # ClawExec for MiSTer-FPGA
 
-Remote control server and CLI client for MiSTer-FPGA retro gaming platforms.
+Remote control server and CLI client for MiSTer-FPGA.
 
 ![Version](https://img.shields.io/badge/Version-v0.1.0-blue)
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)
