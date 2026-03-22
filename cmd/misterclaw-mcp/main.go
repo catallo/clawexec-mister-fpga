@@ -259,6 +259,38 @@ func toolsList() []ToolDef {
 				},
 			},
 		},
+		{
+			Name:        "mister_osd_visible",
+			Description: "Get only the visible OSD menu items for the current core, based on the current CFG state. This shows exactly what the user would see on screen — items hidden by H/h flags are filtered out. Use this instead of osd_info when you want to know what options are actually available right now.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"core": map[string]interface{}{"type": "string", "description": "Core name. If omitted, uses the currently loaded core."},
+				},
+			},
+		},
+		{
+			Name:        "mister_cfg_read",
+			Description: "Read the current CFG file for the running core/game. Returns the raw hex data and decoded option values (e.g. 'Aspect Ratio = Original'). CFG files store per-game/core settings as bit fields.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"core": map[string]interface{}{"type": "string", "description": "Core name. If omitted, uses the currently loaded core."},
+				},
+			},
+		},
+		{
+			Name:        "mister_cfg_write",
+			Description: "Set a core option by name and value. Automatically backs up the CFG file before writing. Use cfg_read first to see available options and their current values. Example: option='Free Play', value='On'.",
+			InputSchema: map[string]interface{}{
+				"type":     "object",
+				"required": []string{"option", "value"},
+				"properties": map[string]interface{}{
+					"option": map[string]interface{}{"type": "string", "description": "Option name (e.g. 'Aspect Ratio', 'Free Play', 'Region')"},
+					"value":  map[string]interface{}{"type": "string", "description": "Value name (e.g. 'Original', 'On', 'US')"},
+				},
+			},
+		},
 	}
 }
 
@@ -359,6 +391,33 @@ func callTool(params json.RawMessage) MCPToolResult {
 			req["core"] = v
 		}
 		return doMisterCommand(req, formatOSDInfo)
+
+	case "mister_osd_visible":
+		req := map[string]interface{}{"mister": "osd_visible"}
+		if v, ok := args["core"].(string); ok && v != "" {
+			req["core"] = v
+		}
+		return doMisterCommand(req, formatOSDVisible)
+
+	case "mister_cfg_read":
+		req := map[string]interface{}{"mister": "cfg_read"}
+		if v, ok := args["core"].(string); ok && v != "" {
+			req["core"] = v
+		}
+		return doMisterCommand(req, formatCFGRead)
+
+	case "mister_cfg_write":
+		option, _ := args["option"].(string)
+		value, _ := args["value"].(string)
+		if option == "" || value == "" {
+			return errorResult("option and value are required")
+		}
+		req := map[string]interface{}{
+			"mister": "cfg_write",
+			"option": option,
+			"value":  value,
+		}
+		return doMisterCommand(req, formatCFGWrite)
 
 	default:
 		return errorResult(fmt.Sprintf("unknown tool: %s", p.Name))
@@ -683,6 +742,92 @@ func formatOSDInfo(resp map[string]interface{}) MCPToolResult {
 	}
 
 	return textResult(sb.String())
+}
+
+func formatOSDVisible(resp map[string]interface{}) MCPToolResult {
+	if success, ok := resp["success"].(bool); ok && !success {
+		errMsg, _ := resp["error"].(string)
+		return errorResult(errMsg)
+	}
+
+	coreName, _ := resp["core_name"].(string)
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Core: %s (visible items)\n\n", coreName))
+
+	menu, _ := resp["menu"].([]interface{})
+	for _, m := range menu {
+		item, ok := m.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		typ, _ := item["type"].(string)
+		name, _ := item["name"].(string)
+
+		switch typ {
+		case "separator":
+			sb.WriteString("  ────────────\n")
+		case "label":
+			sb.WriteString(fmt.Sprintf("  [%s]\n", name))
+		case "option", "option_hidden":
+			values, _ := item["values"].([]interface{})
+			vals := make([]string, len(values))
+			for i, v := range values {
+				vals[i], _ = v.(string)
+			}
+			sb.WriteString(fmt.Sprintf("  Option: %s = [%s]\n", name, strings.Join(vals, ", ")))
+		case "trigger", "trigger_hidden":
+			sb.WriteString(fmt.Sprintf("  Trigger: %s\n", name))
+		default:
+			sb.WriteString(fmt.Sprintf("  %s: %s\n", typ, name))
+		}
+	}
+
+	return textResult(sb.String())
+}
+
+func formatCFGRead(resp map[string]interface{}) MCPToolResult {
+	if success, ok := resp["success"].(bool); ok && !success {
+		errMsg, _ := resp["error"].(string)
+		return errorResult(errMsg)
+	}
+
+	coreName, _ := resp["core_name"].(string)
+	cfgHex, _ := resp["cfg_hex"].(string)
+	cfgPath, _ := resp["cfg_path"].(string)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Core: %s\nCFG: %s\nHex: %s\n\nOptions:\n", coreName, cfgPath, cfgHex))
+
+	options, _ := resp["options"].([]interface{})
+	for _, o := range options {
+		opt, ok := o.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, _ := opt["name"].(string)
+		val, _ := opt["value"].(float64)
+		valName, _ := opt["value_name"].(string)
+		if valName != "" {
+			sb.WriteString(fmt.Sprintf("  %-24s = %s (%d)\n", name, valName, int(val)))
+		} else {
+			sb.WriteString(fmt.Sprintf("  %-24s = %d\n", name, int(val)))
+		}
+	}
+
+	return textResult(sb.String())
+}
+
+func formatCFGWrite(resp map[string]interface{}) MCPToolResult {
+	if success, ok := resp["success"].(bool); ok && !success {
+		errMsg, _ := resp["error"].(string)
+		return errorResult(errMsg)
+	}
+
+	option, _ := resp["option"].(string)
+	value, _ := resp["value"].(string)
+	cfgPath, _ := resp["cfg_path"].(string)
+
+	return textResult(fmt.Sprintf("Set %s = %s\nWritten to: %s (backup created)", option, value, cfgPath))
 }
 
 // Result helpers

@@ -174,24 +174,44 @@ func TestParseConfStr_HideDisable(t *testing.T) {
 	items := ParseConfStr("CORE;;H1O34,Hidden Opt,A,B;D2O56,Disabled Opt,C,D")
 	var hide, disable *MenuItem
 	for i := range items {
-		if items[i].Type == "hide" {
+		if items[i].Name == "Hidden Opt" {
 			hide = &items[i]
 		}
-		if items[i].Type == "disable" {
+		if items[i].Name == "Disabled Opt" {
 			disable = &items[i]
 		}
 	}
 	if hide == nil {
-		t.Fatal("expected hide item")
+		t.Fatal("expected hide item (Hidden Opt)")
 	}
-	if hide.Bit != 1 {
-		t.Errorf("expected hide bit 1, got %d", hide.Bit)
+	// H1O34 should parse as an option with a hide condition
+	if hide.Type != "option" {
+		t.Errorf("expected type option, got %s", hide.Type)
 	}
+	if len(hide.HideConditions) != 1 {
+		t.Fatalf("expected 1 hide condition, got %d", len(hide.HideConditions))
+	}
+	if hide.HideConditions[0].Bit != 1 || hide.HideConditions[0].Type != "hide" {
+		t.Errorf("expected hide condition bit 1, got bit %d type %s", hide.HideConditions[0].Bit, hide.HideConditions[0].Type)
+	}
+	if hide.Bit != 3 || hide.BitHigh != 4 {
+		t.Errorf("expected option bits 3-4, got %d-%d", hide.Bit, hide.BitHigh)
+	}
+	if len(hide.Values) != 2 {
+		t.Errorf("expected 2 values, got %d: %v", len(hide.Values), hide.Values)
+	}
+
 	if disable == nil {
-		t.Fatal("expected disable item")
+		t.Fatal("expected disable item (Disabled Opt)")
 	}
-	if disable.Bit != 2 {
-		t.Errorf("expected disable bit 2, got %d", disable.Bit)
+	if disable.Type != "option" {
+		t.Errorf("expected type option, got %s", disable.Type)
+	}
+	if len(disable.HideConditions) != 1 {
+		t.Fatalf("expected 1 disable condition, got %d", len(disable.HideConditions))
+	}
+	if disable.HideConditions[0].Bit != 2 || disable.HideConditions[0].Type != "disable" {
+		t.Errorf("expected disable condition bit 2, got bit %d type %s", disable.HideConditions[0].Bit, disable.HideConditions[0].Type)
 	}
 }
 

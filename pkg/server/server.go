@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -49,6 +50,10 @@ type Request struct {
 	Key      string   `json:"key,omitempty"`
 	Raw      *int     `json:"raw,omitempty"`
 	Combo    []string `json:"combo,omitempty"`
+
+	// CFG commands
+	Option string `json:"option,omitempty"`
+	Value  string `json:"value,omitempty"`
 }
 
 // ResizeRequest holds PTY dimensions.
@@ -577,6 +582,15 @@ func (s *Server) handleMiSTer(req Request, send func(interface{})) {
 			"menu":         osd.Menu,
 		})
 
+	case "osd_visible":
+		s.handleOSDVisible(req, send)
+
+	case "cfg_read":
+		s.handleCFGRead(req, send)
+
+	case "cfg_write":
+		s.handleCFGWrite(req, send)
+
 	default:
 		send(map[string]interface{}{
 			"error": fmt.Sprintf("unknown mister command: %s", req.MiSTer),
@@ -602,4 +616,155 @@ func extractCoreName(name string) string {
 		}
 	}
 	return name
+}
+
+// resolveOSDAndCFG resolves the current core's OSD info and reads its CFG file.
+func (s *Server) resolveOSDAndCFG(req Request, send func(interface{})) (*mister.CoreOSD, []byte, string, bool) {
+	coreName := req.Core
+	cfgName := ""
+	if coreName == "" {
+		status, err := mister.GetRunningCore()
+		if err != nil {
+			send(map[string]interface{}{"error": "no core specified and " + err.Error()})
+			return nil, nil, "", false
+		}
+		coreName = extractCoreName(status.CoreName)
+		// CFG name comes from the game (MRA), not the core
+		if status.GamePath != "" {
+			base := filepath.Base(status.GamePath)
+			cfgName = strings.TrimSuffix(base, filepath.Ext(base))
+		} else {
+			cfgName = coreName
+		}
+	} else {
+		cfgName = coreName
+	}
+
+	db, err := mister.GetConfStrDB()
+	if err != nil {
+		send(map[string]interface{}{"error": fmt.Sprintf("confstr database not available: %v", err)})
+		return nil, nil, "", false
+	}
+
+	osd := mister.LookupCoreOSD(db, coreName)
+	if osd == nil {
+		send(map[string]interface{}{"error": fmt.Sprintf("no OSD info found for core: %s", coreName)})
+		return nil, nil, "", false
+	}
+
+	cfgPath := mister.CFGPath(cfgName)
+	cfgData, err := mister.ReadCFG(cfgPath)
+	if err != nil {
+		// If no CFG exists, use all zeros (default state)
+		cfgData = make([]byte, 16)
+	}
+
+	return osd, cfgData, cfgPath, true
+}
+
+func (s *Server) handleOSDVisible(req Request, send func(interface{})) {
+	osd, cfgData, _, ok := s.resolveOSDAndCFG(req, send)
+	if !ok {
+		return
+	}
+
+	visible := mister.VisibleMenu(osd, cfgData)
+	send(map[string]interface{}{
+		"mister":    "osd_visible",
+		"success":   true,
+		"core_name": osd.CoreName,
+		"menu":      visible,
+	})
+}
+
+func (s *Server) handleCFGRead(req Request, send func(interface{})) {
+	osd, cfgData, cfgPath, ok := s.resolveOSDAndCFG(req, send)
+	if !ok {
+		return
+	}
+
+	// Decode option values from CFG bits
+	options := []map[string]interface{}{}
+	for _, item := range osd.Menu {
+		if item.Type != "option" && item.Type != "option_hidden" {
+			continue
+		}
+		val := mister.GetBitRange(cfgData, item.Bit, item.BitHigh)
+		opt := map[string]interface{}{
+			"name":  item.Name,
+			"bit":   item.Bit,
+			"value": val,
+		}
+		if val < len(item.Values) {
+			opt["value_name"] = item.Values[val]
+		}
+		options = append(options, opt)
+	}
+
+	send(map[string]interface{}{
+		"mister":    "cfg_read",
+		"success":   true,
+		"core_name": osd.CoreName,
+		"cfg_path":  cfgPath,
+		"cfg_hex":   hex.EncodeToString(cfgData),
+		"cfg_size":  len(cfgData),
+		"options":   options,
+	})
+}
+
+func (s *Server) handleCFGWrite(req Request, send func(interface{})) {
+	if req.Option == "" {
+		send(map[string]interface{}{"error": "cfg_write requires option parameter"})
+		return
+	}
+	if req.Value == "" {
+		send(map[string]interface{}{"error": "cfg_write requires value parameter"})
+		return
+	}
+
+	osd, cfgData, cfgPath, ok := s.resolveOSDAndCFG(req, send)
+	if !ok {
+		return
+	}
+
+	item := mister.FindOption(osd, req.Option)
+	if item == nil {
+		send(map[string]interface{}{
+			"mister":  "cfg_write",
+			"success": false,
+			"error":   fmt.Sprintf("option not found: %s", req.Option),
+		})
+		return
+	}
+
+	valIdx := mister.FindOptionValue(item, req.Value)
+	if valIdx < 0 {
+		send(map[string]interface{}{
+			"mister":  "cfg_write",
+			"success": false,
+			"error":   fmt.Sprintf("value %q not found for option %s (available: %v)", req.Value, req.Option, item.Values),
+		})
+		return
+	}
+
+	mister.SetBitRange(cfgData, item.Bit, item.BitHigh, valIdx)
+
+	if err := mister.WriteCFG(cfgPath, cfgData); err != nil {
+		send(map[string]interface{}{
+			"mister":  "cfg_write",
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	send(map[string]interface{}{
+		"mister":     "cfg_write",
+		"success":    true,
+		"core_name":  osd.CoreName,
+		"option":     item.Name,
+		"value":      req.Value,
+		"value_index": valIdx,
+		"cfg_path":   cfgPath,
+	})
 }

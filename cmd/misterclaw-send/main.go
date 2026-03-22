@@ -77,6 +77,12 @@ func main() {
 		err = cmdShell(cmdArgs)
 	case "osd-info":
 		err = cmdOSDInfo(cmdArgs)
+	case "osd-visible":
+		err = cmdOSDVisible(cmdArgs)
+	case "cfg-read":
+		err = cmdCFGRead(cmdArgs)
+	case "cfg-write":
+		err = cmdCFGWrite(cmdArgs)
 	case "discover":
 		err = cmdDiscover()
 	case "help":
@@ -669,6 +675,134 @@ func cmdOSDInfo(args []string) error {
 	return nil
 }
 
+func cmdOSDVisible(args []string) error {
+	coreName, _ := extractFlag(args, "core", "c")
+
+	req := map[string]interface{}{"mister": "osd_visible"}
+	if coreName != "" {
+		req["core"] = coreName
+	}
+
+	resp, err := sendRequest(req)
+	if err != nil {
+		return err
+	}
+
+	if jsonFlag {
+		outputJSON(resp)
+		return nil
+	}
+
+	core, _ := resp["core_name"].(string)
+	fmt.Printf("Core: %s (visible items only)\n\n", core)
+
+	menu, _ := resp["menu"].([]interface{})
+	for _, m := range menu {
+		item, ok := m.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		typ, _ := item["type"].(string)
+		name, _ := item["name"].(string)
+
+		switch typ {
+		case "separator":
+			fmt.Println("  ────────────")
+		case "label":
+			fmt.Printf("  [%s]\n", name)
+		case "option", "option_hidden":
+			values, _ := item["values"].([]interface{})
+			vals := make([]string, len(values))
+			for i, v := range values {
+				vals[i], _ = v.(string)
+			}
+			fmt.Printf("  Option: %s = [%s]\n", name, strings.Join(vals, ", "))
+		case "trigger", "trigger_hidden":
+			fmt.Printf("  Trigger: %s\n", name)
+		case "file_load", "file_load_core":
+			label, _ := item["label"].(string)
+			fmt.Printf("  File: %s\n", label)
+		default:
+			fmt.Printf("  %s: %s\n", typ, name)
+		}
+	}
+	return nil
+}
+
+func cmdCFGRead(args []string) error {
+	coreName, _ := extractFlag(args, "core", "c")
+
+	req := map[string]interface{}{"mister": "cfg_read"}
+	if coreName != "" {
+		req["core"] = coreName
+	}
+
+	resp, err := sendRequest(req)
+	if err != nil {
+		return err
+	}
+
+	if jsonFlag {
+		outputJSON(resp)
+		return nil
+	}
+
+	core, _ := resp["core_name"].(string)
+	cfgHex, _ := resp["cfg_hex"].(string)
+	cfgPath, _ := resp["cfg_path"].(string)
+
+	fmt.Printf("Core: %s\n", core)
+	fmt.Printf("CFG:  %s\n", cfgPath)
+	fmt.Printf("Hex:  %s\n\n", cfgHex)
+
+	options, _ := resp["options"].([]interface{})
+	for _, o := range options {
+		opt, ok := o.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, _ := opt["name"].(string)
+		val, _ := opt["value"].(float64)
+		valName, _ := opt["value_name"].(string)
+		if valName != "" {
+			fmt.Printf("  %-24s = %s (%d)\n", name, valName, int(val))
+		} else {
+			fmt.Printf("  %-24s = %d\n", name, int(val))
+		}
+	}
+	return nil
+}
+
+func cmdCFGWrite(args []string) error {
+	optionName, rest := extractFlag(args, "option", "o")
+	valueName, _ := extractFlag(rest, "value", "v")
+
+	if optionName == "" || valueName == "" {
+		return fmt.Errorf("usage: misterclaw-send cfg-write --option <name> --value <value>")
+	}
+
+	resp, err := sendRequest(map[string]interface{}{
+		"mister": "cfg_write",
+		"option": optionName,
+		"value":  valueName,
+	})
+	if err != nil {
+		return err
+	}
+
+	if jsonFlag {
+		outputJSON(resp)
+		return nil
+	}
+
+	option, _ := resp["option"].(string)
+	value, _ := resp["value"].(string)
+	cfgPath, _ := resp["cfg_path"].(string)
+	fmt.Printf("Set %s = %s\n", option, value)
+	fmt.Printf("Written to: %s (backup created)\n", cfgPath)
+	return nil
+}
+
 func printHelp() {
 	fmt.Print(`MisterClaw — Remote control for MiSTer-FPGA retro gaming platform.
 
@@ -687,6 +821,9 @@ COMMANDS:
   info          System information
   input         Send keyboard input (key/raw/combo)
   osd-info      Show OSD menu structure for current or specified core
+  osd-visible   Show only visible OSD menu items (based on CFG state)
+  cfg-read      Read current CFG file and decode option values
+  cfg-write     Set a core option by name (with automatic backup)
   tailscale     Tailscale VPN management (setup/status/start/stop)
   shell         Execute shell command on MiSTer-FPGA
   discover      Scan local network for MiSTer-FPGA servers
@@ -714,6 +851,9 @@ EXAMPLES:
   misterclaw-send input combo leftalt f12
   misterclaw-send osd-info
   misterclaw-send osd-info --core SNES
+  misterclaw-send osd-visible
+  misterclaw-send cfg-read
+  misterclaw-send cfg-write --option "Free Play" --value On
   misterclaw-send shell "ls /media/fat/games/"
 
 AGENT NOTES:
@@ -836,6 +976,31 @@ func BuildRequest(cmd string, args []string) (map[string]interface{}, error) {
 			req["core"] = coreName
 		}
 		return req, nil
+	case "osd-visible":
+		coreName, _ := extractFlag(args, "core", "c")
+		req := map[string]interface{}{"mister": "osd_visible"}
+		if coreName != "" {
+			req["core"] = coreName
+		}
+		return req, nil
+	case "cfg-read":
+		coreName, _ := extractFlag(args, "core", "c")
+		req := map[string]interface{}{"mister": "cfg_read"}
+		if coreName != "" {
+			req["core"] = coreName
+		}
+		return req, nil
+	case "cfg-write":
+		optionName, rest := extractFlag(args, "option", "o")
+		valueName, _ := extractFlag(rest, "value", "v")
+		if optionName == "" || valueName == "" {
+			return nil, fmt.Errorf("cfg-write requires --option and --value")
+		}
+		return map[string]interface{}{
+			"mister": "cfg_write",
+			"option": optionName,
+			"value":  valueName,
+		}, nil
 	case "tailscale":
 		if len(args) == 0 {
 			return nil, fmt.Errorf("tailscale requires an action")

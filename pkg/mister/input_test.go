@@ -91,11 +91,11 @@ func TestPressKey_Named(t *testing.T) {
 	}
 
 	events := mock.getEvents()
-	if len(events) != 1 {
+	if len(events) != 2 {
 		t.Fatalf("expected 1 event, got %d: %v", len(events), events)
 	}
-	if events[0].action != "press" {
-		t.Errorf("expected press, got %s", events[0].action)
+	if events[0].action != "down" {
+		t.Errorf("expected down, got %s", events[0].action)
 	}
 	if events[0].code != KeyNames["f12"] {
 		t.Errorf("expected F12 code %d, got %d", KeyNames["f12"], events[0].code)
@@ -128,8 +128,8 @@ func TestPressKey_CaseInsensitive(t *testing.T) {
 	if err := PressKey("OSD"); err != nil {
 		t.Fatalf("PressKey(OSD): %v", err)
 	}
-	if len(mock.getEvents()) != 1 {
-		t.Error("expected 1 event for case-insensitive key")
+	if len(mock.getEvents()) != 2 {
+		t.Error("expected 2 events for case-insensitive key")
 	}
 }
 
@@ -150,7 +150,7 @@ func TestPressRawKey(t *testing.T) {
 	}
 
 	events := mock.getEvents()
-	if len(events) != 1 {
+	if len(events) != 2 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
 	if events[0].code != 28 {

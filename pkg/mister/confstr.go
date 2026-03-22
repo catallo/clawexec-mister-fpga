@@ -24,19 +24,71 @@ type CoreOSD struct {
 	Menu       []MenuItem `json:"menu"`
 }
 
+// HideCondition represents a visibility/enable condition from H/h/D/d prefixes.
+type HideCondition struct {
+	Bit      int    `json:"bit"`
+	Type     string `json:"type"`     // "hide" or "disable"
+	Inverted bool   `json:"inverted"` // h/d = inverted (hide/disable when bit=0)
+}
+
 // MenuItem represents a single parsed CONF_STR menu entry.
 type MenuItem struct {
-	Type       string   `json:"type"`
-	Raw        string   `json:"raw"`
-	Name       string   `json:"name,omitempty"`
-	Bit        int      `json:"bit,omitempty"`
-	BitHigh    int      `json:"bit_high,omitempty"`
-	Values     []string `json:"values,omitempty"`
-	Extensions []string `json:"extensions,omitempty"`
-	Label      string   `json:"label,omitempty"`
-	Index      int      `json:"index,omitempty"`
-	PageID     int      `json:"page_id,omitempty"`
-	Default    int      `json:"default,omitempty"`
+	Type           string          `json:"type"`
+	Raw            string          `json:"raw"`
+	Name           string          `json:"name,omitempty"`
+	Bit            int             `json:"bit,omitempty"`
+	BitHigh        int             `json:"bit_high,omitempty"`
+	Values         []string        `json:"values,omitempty"`
+	Extensions     []string        `json:"extensions,omitempty"`
+	Label          string          `json:"label,omitempty"`
+	Index          int             `json:"index,omitempty"`
+	PageID         int             `json:"page_id,omitempty"`
+	Default        int             `json:"default,omitempty"`
+	HideConditions []HideCondition `json:"hide_conditions,omitempty"`
+}
+
+// Visible returns whether this menu item is visible given the current CFG data.
+// Items with no hide conditions are always visible.
+// H[bit] = hide when bit=1, h[bit] = hide when bit=0
+func (m *MenuItem) Visible(cfgData []byte) bool {
+	for _, cond := range m.HideConditions {
+		if cond.Type != "hide" {
+			continue // disable conditions don't affect visibility
+		}
+		bitSet := GetBit(cfgData, cond.Bit)
+		if cond.Inverted {
+			// h = hide when bit is 0
+			if !bitSet {
+				return false
+			}
+		} else {
+			// H = hide when bit is 1
+			if bitSet {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// Enabled returns whether this menu item is enabled (not grayed out) given CFG data.
+func (m *MenuItem) Enabled(cfgData []byte) bool {
+	for _, cond := range m.HideConditions {
+		if cond.Type != "disable" {
+			continue
+		}
+		bitSet := GetBit(cfgData, cond.Bit)
+		if cond.Inverted {
+			if !bitSet {
+				return false
+			}
+		} else {
+			if bitSet {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // ParseConfStr parses a raw CONF_STR semicolon-delimited string into menu items.
@@ -401,7 +453,8 @@ func parseCheat(raw, rest string) *MenuItem {
 
 // parseHideDisable parses H/h/D/d entries.
 // Format: H[bit][inner_item] — e.g. "H1O34,Hidden Opt,A,B" means hide-controlled (bit 1) option O34.
-// Or simpler: H[bit],[name]
+// When an inner command is present (O, T, etc.), it parses the inner item and attaches the hide condition.
+// Otherwise returns a standalone hide/disable marker.
 func parseHideDisable(raw, rest, typ string, inverted bool) *MenuItem {
 	actualType := typ
 	if inverted {
@@ -424,22 +477,36 @@ func parseHideDisable(raw, rest, typ string, inverted bool) *MenuItem {
 		}
 	}
 
-	remaining := rest[i:]
-	name := ""
+	cond := HideCondition{
+		Bit:      bit,
+		Type:     typ,
+		Inverted: inverted,
+	}
 
-	// If remaining starts with a command letter (O, T, etc.), it's a modified item
+	remaining := rest[i:]
+
+	// If remaining starts with a command letter (O, T, etc.), parse the inner item
 	if len(remaining) > 0 && isCommandPrefix(remaining[0]) {
-		// The rest describes the controlled item — include it as-is in name
-		name = remaining
-	} else if len(remaining) > 0 && remaining[0] == ',' {
+		inner := parseMenuItem(remaining)
+		if inner != nil {
+			inner.Raw = raw // preserve original raw including H/D prefix
+			inner.HideConditions = append(inner.HideConditions, cond)
+			return inner
+		}
+	}
+
+	// Standalone hide/disable marker (e.g. "H1,Some Label")
+	name := ""
+	if len(remaining) > 0 && remaining[0] == ',' {
 		name = remaining[1:]
 	}
 
 	return &MenuItem{
-		Type: actualType,
-		Raw:  raw,
-		Name: name,
-		Bit:  bit,
+		Type:           actualType,
+		Raw:            raw,
+		Name:           name,
+		Bit:            bit,
+		HideConditions: []HideCondition{cond},
 	}
 }
 
@@ -743,4 +810,53 @@ func RepoToCoreName(repoName string) string {
 	name := strings.TrimSuffix(repoName, "_MiSTer")
 	name = strings.TrimPrefix(name, "Arcade-")
 	return name
+}
+
+// VisibleMenu returns only the menu items that are visible given the current CFG state.
+// This matches what the MiSTer OSD actually displays.
+func VisibleMenu(core *CoreOSD, cfgData []byte) []MenuItem {
+	var visible []MenuItem
+	for _, item := range core.Menu {
+		if item.Visible(cfgData) {
+			visible = append(visible, item)
+		}
+	}
+	return visible
+}
+
+// FindOption finds a menu item by name (case-insensitive) in a core's menu.
+func FindOption(core *CoreOSD, name string) *MenuItem {
+	target := strings.ToLower(name)
+	for i := range core.Menu {
+		if strings.ToLower(core.Menu[i].Name) == target {
+			return &core.Menu[i]
+		}
+	}
+	return nil
+}
+
+// FindOptionValue returns the index of a value name within an option's Values list.
+// Returns -1 if not found. Case-insensitive.
+func FindOptionValue(item *MenuItem, valueName string) int {
+	target := strings.ToLower(valueName)
+	for i, v := range item.Values {
+		if strings.ToLower(v) == target {
+			return i
+		}
+	}
+	return -1
+}
+
+// LetterToBit converts a CONF_STR bit letter to a bit number.
+// A-Z = 0-25, a-z = 32-57 (a=32).
+func LetterToBit(c byte) int {
+	switch {
+	case c >= 'A' && c <= 'Z':
+		return int(c - 'A')
+	case c >= 'a' && c <= 'z':
+		return int(c-'a') + 32
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	}
+	return 0
 }
