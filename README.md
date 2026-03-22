@@ -97,7 +97,7 @@ Agent: R-Type (M72 core) has these settings:
 
 You: "Enable No Death Mode"
 Agent: ⚙️ Set "No Death Mode" to On in R-Type.
-       Reload the core for the change to take effect.
+       The core reloads automatically — change is live!
 ```
 
 ## CLI Client

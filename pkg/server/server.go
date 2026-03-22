@@ -670,6 +670,19 @@ func extractCoreName(name string) string {
 }
 
 // coreContext holds all resolved state for the current core: OSD info, CFG data, DIP data, paths.
+
+// reloadCurrentCore reloads the currently running core/game so config changes take effect.
+func (s *Server) reloadCurrentCore() {
+	status, err := mister.GetRunningCore()
+	if err != nil || status == nil {
+		return
+	}
+	if status.GamePath != "" {
+		mister.LoadCore(status.GamePath)
+	} else if status.CorePath != "" {
+		mister.LoadCore(status.CorePath)
+	}
+}
 type coreContext struct {
 	OSD     *mister.CoreOSD
 	CFGData []byte
@@ -872,6 +885,9 @@ func (s *Server) handleCFGWrite(req Request, send func(interface{})) {
 			return
 		}
 
+		// Reload current core so settings take effect
+		s.reloadCurrentCore()
+
 		send(map[string]interface{}{
 			"mister":      "cfg_write",
 			"success":     true,
@@ -881,6 +897,7 @@ func (s *Server) handleCFGWrite(req Request, send func(interface{})) {
 			"value_index": valIdx,
 			"cfg_path":    ctx.CFGPath,
 			"source":      "cfg",
+			"reloaded":    true,
 		})
 		return
 	}
@@ -911,6 +928,9 @@ func (s *Server) handleCFGWrite(req Request, send func(interface{})) {
 				return
 			}
 
+			// Reload current core so settings take effect
+			s.reloadCurrentCore()
+
 			send(map[string]interface{}{
 				"mister":      "cfg_write",
 				"success":     true,
@@ -920,6 +940,7 @@ func (s *Server) handleCFGWrite(req Request, send func(interface{})) {
 				"value_index": valIdx,
 				"dip_path":    ctx.DIPPath,
 				"source":      "dip",
+				"reloaded":    true,
 			})
 			return
 		}
