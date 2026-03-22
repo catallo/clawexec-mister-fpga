@@ -71,6 +71,8 @@ func main() {
 		err = cmdInfo()
 	case "tailscale":
 		err = cmdTailscale(cmdArgs)
+	case "input":
+		err = cmdInput(cmdArgs)
 	case "shell":
 		err = cmdShell(cmdArgs)
 	case "discover":
@@ -546,6 +548,53 @@ func cmdShell(args []string) error {
 	return nil
 }
 
+func cmdInput(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: misterclaw-send input <key|raw|combo> <value>")
+	}
+
+	mode := args[0]
+	modeArgs := args[1:]
+
+	var req map[string]interface{}
+	switch mode {
+	case "key":
+		if len(modeArgs) == 0 {
+			return fmt.Errorf("usage: misterclaw-send input key <name>\nNames: osd, menu, confirm, up, down, left, right, core_select, screenshot, reset, user, etc.")
+		}
+		req = map[string]interface{}{"mister": "input", "key": modeArgs[0]}
+	case "raw":
+		if len(modeArgs) == 0 {
+			return fmt.Errorf("usage: misterclaw-send input raw <keycode>")
+		}
+		code, err := strconv.Atoi(modeArgs[0])
+		if err != nil {
+			return fmt.Errorf("invalid keycode: %s", modeArgs[0])
+		}
+		req = map[string]interface{}{"mister": "input", "raw": code}
+	case "combo":
+		if len(modeArgs) == 0 {
+			return fmt.Errorf("usage: misterclaw-send input combo <key1> <key2> ...\nExample: misterclaw-send input combo leftalt f12")
+		}
+		req = map[string]interface{}{"mister": "input", "combo": modeArgs}
+	default:
+		return fmt.Errorf("unknown input mode: %s (use: key, raw, combo)", mode)
+	}
+
+	resp, err := sendRequest(req)
+	if err != nil {
+		return err
+	}
+
+	if jsonFlag {
+		outputJSON(resp)
+		return nil
+	}
+
+	fmt.Println("OK")
+	return nil
+}
+
 func printHelp() {
 	fmt.Print(`MisterClaw — Remote control for MiSTer-FPGA retro gaming platform.
 
@@ -562,6 +611,7 @@ COMMANDS:
   systems       List available systems and ROM counts
   screenshot    Take a screenshot (returns PNG)
   info          System information
+  input         Send keyboard input (key/raw/combo)
   tailscale     Tailscale VPN management (setup/status/start/stop)
   shell         Execute shell command on MiSTer-FPGA
   discover      Scan local network for MiSTer-FPGA servers
@@ -584,6 +634,9 @@ EXAMPLES:
   misterclaw-send info
   misterclaw-send tailscale setup
   misterclaw-send tailscale status
+  misterclaw-send input key osd
+  misterclaw-send input raw 28
+  misterclaw-send input combo leftalt f12
   misterclaw-send shell "ls /media/fat/games/"
 
 AGENT NOTES:
@@ -670,6 +723,35 @@ func BuildRequest(cmd string, args []string) (map[string]interface{}, error) {
 			}
 		}
 		return req, nil
+	case "input":
+		if len(args) == 0 {
+			return nil, fmt.Errorf("input requires a mode: key, raw, or combo")
+		}
+		mode := args[0]
+		modeArgs := args[1:]
+		switch mode {
+		case "key":
+			if len(modeArgs) == 0 {
+				return nil, fmt.Errorf("input key requires a key name")
+			}
+			return map[string]interface{}{"mister": "input", "key": modeArgs[0]}, nil
+		case "raw":
+			if len(modeArgs) == 0 {
+				return nil, fmt.Errorf("input raw requires a keycode")
+			}
+			code, err := strconv.Atoi(modeArgs[0])
+			if err != nil {
+				return nil, fmt.Errorf("invalid keycode: %s", modeArgs[0])
+			}
+			return map[string]interface{}{"mister": "input", "raw": code}, nil
+		case "combo":
+			if len(modeArgs) == 0 {
+				return nil, fmt.Errorf("input combo requires at least one key")
+			}
+			return map[string]interface{}{"mister": "input", "combo": modeArgs}, nil
+		default:
+			return nil, fmt.Errorf("unknown input mode: %s", mode)
+		}
 	case "tailscale":
 		if len(args) == 0 {
 			return nil, fmt.Errorf("tailscale requires an action")

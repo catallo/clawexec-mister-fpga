@@ -201,6 +201,84 @@ func TestBuildRequest_SearchSystemEqualsForm(t *testing.T) {
 	}
 }
 
+func TestBuildRequest_InputKey(t *testing.T) {
+	req, err := BuildRequest("input", []string{"key", "osd"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req["mister"] != "input" {
+		t.Errorf("expected mister=input, got %v", req["mister"])
+	}
+	if req["key"] != "osd" {
+		t.Errorf("expected key=osd, got %v", req["key"])
+	}
+}
+
+func TestBuildRequest_InputRaw(t *testing.T) {
+	req, err := BuildRequest("input", []string{"raw", "28"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req["mister"] != "input" {
+		t.Errorf("expected mister=input, got %v", req["mister"])
+	}
+	if req["raw"] != 28 {
+		t.Errorf("expected raw=28, got %v", req["raw"])
+	}
+}
+
+func TestBuildRequest_InputCombo(t *testing.T) {
+	req, err := BuildRequest("input", []string{"combo", "leftalt", "f12"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req["mister"] != "input" {
+		t.Errorf("expected mister=input, got %v", req["mister"])
+	}
+	combo, ok := req["combo"].([]string)
+	if !ok {
+		t.Fatalf("expected combo to be []string, got %T", req["combo"])
+	}
+	if len(combo) != 2 || combo[0] != "leftalt" || combo[1] != "f12" {
+		t.Errorf("expected combo=[leftalt,f12], got %v", combo)
+	}
+}
+
+func TestBuildRequest_InputEmpty(t *testing.T) {
+	_, err := BuildRequest("input", nil)
+	if err == nil {
+		t.Fatal("expected error for empty input")
+	}
+}
+
+func TestBuildRequest_InputKeyEmpty(t *testing.T) {
+	_, err := BuildRequest("input", []string{"key"})
+	if err == nil {
+		t.Fatal("expected error for input key with no name")
+	}
+}
+
+func TestBuildRequest_InputRawInvalid(t *testing.T) {
+	_, err := BuildRequest("input", []string{"raw", "abc"})
+	if err == nil {
+		t.Fatal("expected error for invalid raw keycode")
+	}
+}
+
+func TestBuildRequest_InputComboEmpty(t *testing.T) {
+	_, err := BuildRequest("input", []string{"combo"})
+	if err == nil {
+		t.Fatal("expected error for empty combo")
+	}
+}
+
+func TestBuildRequest_InputUnknownMode(t *testing.T) {
+	_, err := BuildRequest("input", []string{"foobar"})
+	if err == nil {
+		t.Fatal("expected error for unknown input mode")
+	}
+}
+
 func TestHelpOutput(t *testing.T) {
 	// Verify printHelp doesn't panic (basic smoke test)
 	// We can't easily capture stdout in a test without more infrastructure,

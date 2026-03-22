@@ -227,6 +227,18 @@ func toolsList() []ToolDef {
 			},
 		},
 		{
+			Name:        "mister_input",
+			Description: "Send keyboard input to MiSTer-FPGA via virtual uinput device. Use 'key' for named keys (osd, menu, confirm, up, down, left, right, core_select, screenshot, reset, user, pair_bluetooth, console, back, volume_up, volume_down). Use 'raw' for Linux keycodes. Use 'combo' for key combinations (e.g. ['leftalt', 'f12']).",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"key":   map[string]interface{}{"type": "string", "description": "Named key to press (e.g. 'osd', 'menu', 'confirm', 'core_select')"},
+					"raw":   map[string]interface{}{"type": "number", "description": "Raw Linux keycode to press (e.g. 28 for Enter)"},
+					"combo": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Key combination to press (e.g. ['leftalt', 'f12'])"},
+				},
+			},
+		},
+		{
 			Name:        "mister_shell",
 			Description: "Execute a shell command on MiSTer-FPGA and return the output. Use for file operations, system administration, or any task not covered by other tools. Commands run as the MiSTer user with full system access.",
 			InputSchema: map[string]interface{}{
@@ -306,6 +318,23 @@ func callTool(params json.RawMessage) MCPToolResult {
 			req["hostname"] = v
 		}
 		return doMisterCommand(req, formatTailscale)
+
+	case "mister_input":
+		req := map[string]interface{}{"mister": "input"}
+		if v, ok := args["key"].(string); ok && v != "" {
+			req["key"] = v
+		} else if v, ok := args["raw"].(float64); ok {
+			req["raw"] = int(v)
+		} else if v, ok := args["combo"].([]interface{}); ok && len(v) > 0 {
+			combo := make([]string, len(v))
+			for i, k := range v {
+				combo[i], _ = k.(string)
+			}
+			req["combo"] = combo
+		} else {
+			return errorResult("one of key, raw, or combo is required")
+		}
+		return doMisterCommand(req, formatInput)
 
 	case "mister_shell":
 		cmd, _ := args["command"].(string)
@@ -553,6 +582,27 @@ func formatTailscale(resp map[string]interface{}) MCPToolResult {
 	// Return the raw JSON for tailscale since responses vary by action
 	data, _ := json.MarshalIndent(resp, "", "  ")
 	return textResult(string(data))
+}
+
+func formatInput(resp map[string]interface{}) MCPToolResult {
+	if success, ok := resp["success"].(bool); ok && !success {
+		errMsg, _ := resp["error"].(string)
+		return errorResult(fmt.Sprintf("Input failed: %s", errMsg))
+	}
+	if key, ok := resp["key"].(string); ok {
+		return textResult(fmt.Sprintf("Pressed key: %s", key))
+	}
+	if raw, ok := resp["raw"].(float64); ok {
+		return textResult(fmt.Sprintf("Pressed raw key: %d", int(raw)))
+	}
+	if combo, ok := resp["combo"].([]interface{}); ok {
+		keys := make([]string, len(combo))
+		for i, k := range combo {
+			keys[i], _ = k.(string)
+		}
+		return textResult(fmt.Sprintf("Pressed combo: %s", strings.Join(keys, "+")))
+	}
+	return textResult("Input sent")
 }
 
 // Result helpers

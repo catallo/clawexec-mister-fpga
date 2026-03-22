@@ -116,6 +116,7 @@ func TestHandleToolsList(t *testing.T) {
 		"mister_systems":    false,
 		"mister_screenshot": false,
 		"mister_info":       false,
+		"mister_input":      false,
 		"mister_tailscale":  false,
 		"mister_shell":      false,
 	}
@@ -354,7 +355,7 @@ func TestFullRoundTrip(t *testing.T) {
 	result, _ = parsed["result"].(map[string]interface{})
 
 	tools, _ := result["tools"].([]interface{})
-	if len(tools) != 8 {
-		t.Errorf("expected 8 tools, got %d", len(tools))
+	if len(tools) != 9 {
+		t.Errorf("expected 9 tools, got %d", len(tools))
 	}
 }

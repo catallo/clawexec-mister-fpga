@@ -38,14 +38,17 @@ type Request struct {
 	Resize *ResizeRequest `json:"resize,omitempty"`
 
 	// MiSTer commands
-	MiSTer   string `json:"mister,omitempty"`
-	Core     string `json:"core,omitempty"`
-	Path     string `json:"path,omitempty"`
-	Query    string `json:"query,omitempty"`
-	System   string `json:"system,omitempty"`
-	Action   string `json:"action,omitempty"`
-	URL      string `json:"url,omitempty"`
-	Hostname string `json:"hostname,omitempty"`
+	MiSTer   string   `json:"mister,omitempty"`
+	Core     string   `json:"core,omitempty"`
+	Path     string   `json:"path,omitempty"`
+	Query    string   `json:"query,omitempty"`
+	System   string   `json:"system,omitempty"`
+	Action   string   `json:"action,omitempty"`
+	URL      string   `json:"url,omitempty"`
+	Hostname string   `json:"hostname,omitempty"`
+	Key      string   `json:"key,omitempty"`
+	Raw      *int     `json:"raw,omitempty"`
+	Combo    []string `json:"combo,omitempty"`
 }
 
 // ResizeRequest holds PTY dimensions.
@@ -405,6 +408,56 @@ func (s *Server) handleMiSTer(req Request, send func(interface{})) {
 			"game":      game.Name,
 			"core_name": cfg.Core,
 		})
+
+	case "input":
+		switch {
+		case req.Key != "":
+			if err := mister.PressKey(req.Key); err != nil {
+				send(map[string]interface{}{
+					"mister":  "input",
+					"success": false,
+					"error":   err.Error(),
+				})
+				return
+			}
+			send(map[string]interface{}{
+				"mister":  "input",
+				"success": true,
+				"key":     req.Key,
+			})
+		case req.Raw != nil:
+			if err := mister.PressRawKey(*req.Raw); err != nil {
+				send(map[string]interface{}{
+					"mister":  "input",
+					"success": false,
+					"error":   err.Error(),
+				})
+				return
+			}
+			send(map[string]interface{}{
+				"mister":  "input",
+				"success": true,
+				"raw":     *req.Raw,
+			})
+		case len(req.Combo) > 0:
+			if err := mister.PressCombo(req.Combo); err != nil {
+				send(map[string]interface{}{
+					"mister":  "input",
+					"success": false,
+					"error":   err.Error(),
+				})
+				return
+			}
+			send(map[string]interface{}{
+				"mister":  "input",
+				"success": true,
+				"combo":   req.Combo,
+			})
+		default:
+			send(map[string]interface{}{
+				"error": "input requires key, raw, or combo parameter",
+			})
+		}
 
 	case "tailscale":
 		switch req.Action {

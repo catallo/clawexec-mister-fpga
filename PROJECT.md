@@ -30,6 +30,7 @@ pkg/
   pty/executor.go                       — PTY execution (creack/pty) + pipe fallback
   mister/
     cmd.go                              — /dev/MiSTer_cmd interface (load_core, screenshot trigger)
+    input.go                            — Virtual keyboard via /dev/uinput (named keys, raw codes, combos)
     osd.go                              — Framebuffer OSD rendering (8x16 bitmap font)
     games.go                            — ROM filesystem scanner, search index, MGL generator
     screenshots.go                      — Screenshot capture + read from /media/fat/screenshots/
@@ -47,6 +48,7 @@ pkg/
 - `info` — System information (temp, RAM, disk, uptime, IP)
 - `status` — Show current core and game
 - `tailscale setup|status|start|stop` — Tailscale VPN management
+- `input` — Send keyboard input (key/raw/combo) via virtual uinput device
 - `shell` — Execute arbitrary shell command on MiSTer-FPGA
 
 ### Server Features (`misterclaw`)
@@ -95,6 +97,10 @@ Newline-delimited JSON over TCP (port 9900). **100% compatible with ClawExec GUI
 {"mister": "systems"}
 // Current core status
 {"mister": "status"}
+// Keyboard input (virtual uinput)
+{"mister": "input", "key": "osd"}
+{"mister": "input", "raw": 28}
+{"mister": "input", "combo": ["leftalt", "f12"]}
 // Tailscale management
 {"mister": "tailscale", "action": "setup"}
 {"mister": "tailscale", "action": "status"}
@@ -115,6 +121,7 @@ Newline-delimited JSON over TCP (port 9900). **100% compatible with ClawExec GUI
 | Interface | Purpose | Method |
 |-----------|---------|--------|
 | /dev/MiSTer_cmd | Load cores, trigger screenshots | Named pipe (FIFO write) |
+| /dev/uinput | Virtual keyboard input | uinput device (bendahl/uinput) |
 | /media/fat/*.rbf | Core files | Filesystem scan |
 | /media/fat/_*/ | Core categories | Filesystem scan |
 | /media/fat/games/ | ROM files | Filesystem scan + index |
@@ -149,10 +156,10 @@ scp misterclaw root@10.0.0.8:/media/fat/Scripts/
 - Go stdlib
 - github.com/creack/pty (PTY allocation)
 - github.com/google/uuid (request IDs)
+- github.com/bendahl/uinput (virtual keyboard input)
 - Zero runtime dependencies on MiSTer
 
 ## Phase 2/3 TODO (Open)
-- /dev/uinput keyboard/controller simulation
 - Game history / playtime tracking
 - Savestate management
 - Auto-discovery (mDNS)
