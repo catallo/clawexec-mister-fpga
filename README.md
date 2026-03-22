@@ -1,6 +1,6 @@
 # 👾🦀 MiSTerClaw — MCP Remote Control for MiSTer-FPGA
 
-MiSTerClaw is the first MCP server for MiSTer-FPGA. Control your MiSTer from any AI agent.
+MiSTerClaw might be the first MCP server for MiSTer-FPGA. Control your MiSTer from any AI agent.
 
 ![Version](https://img.shields.io/badge/Version-v0.1.0-blue)
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)
