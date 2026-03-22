@@ -9,6 +9,121 @@ import (
 	"github.com/bendahl/uinput"
 )
 
+// GamepadDevice abstracts uinput.Gamepad for testing.
+type GamepadDevice interface {
+	ButtonPress(key int) error
+	ButtonDown(key int) error
+	ButtonUp(key int) error
+	HatPress(direction uinput.HatDirection) error
+	HatRelease(direction uinput.HatDirection) error
+	Close() error
+}
+
+// gamepadCreator is the function used to create a gamepad device.
+// Override in tests to inject a mock.
+var gamepadCreator = func() (GamepadDevice, error) {
+	return uinput.CreateGamepad("/dev/uinput", []byte("misterclaw-pad"), 0x0079, 0x0006)
+}
+
+var (
+	gpMu   sync.Mutex
+	gpInst GamepadDevice
+)
+
+// getGamepad returns the lazily-created shared gamepad instance.
+func getGamepad() (GamepadDevice, error) {
+	gpMu.Lock()
+	defer gpMu.Unlock()
+	if gpInst != nil {
+		return gpInst, nil
+	}
+	gp, err := gamepadCreator()
+	if err != nil {
+		return nil, fmt.Errorf("creating gamepad device: %w", err)
+	}
+	gpInst = gp
+	// MiSTer needs time to register the new input device
+	time.Sleep(200 * time.Millisecond)
+	return gpInst, nil
+}
+
+// InitGamepad eagerly creates the gamepad device so MiSTer can register it.
+func InitGamepad() (GamepadDevice, error) {
+	return getGamepad()
+}
+
+// CloseGamepad closes the shared gamepad device if open.
+func CloseGamepad() {
+	gpMu.Lock()
+	defer gpMu.Unlock()
+	if gpInst != nil {
+		gpInst.Close()
+		gpInst = nil
+	}
+}
+
+// GamepadButtons maps friendly button names to Linux BTN codes.
+var GamepadButtons = map[string]int{
+	"a":      uinput.ButtonSouth,      // 0x130
+	"b":      uinput.ButtonEast,       // 0x131
+	"x":      uinput.ButtonNorth,      // 0x133
+	"y":      uinput.ButtonWest,       // 0x134
+	"start":  uinput.ButtonStart,      // 0x13B
+	"select": uinput.ButtonSelect,     // 0x13A
+	"l":      uinput.ButtonBumperLeft, // 0x136
+	"r":      uinput.ButtonBumperRight, // 0x137
+	"coin":   uinput.ButtonSelect,     // coin maps to Select
+}
+
+// DPadDirections maps direction names to uinput HatDirection values.
+var DPadDirections = map[string]uinput.HatDirection{
+	"up":    uinput.HatUp,
+	"down":  uinput.HatDown,
+	"left":  uinput.HatLeft,
+	"right": uinput.HatRight,
+}
+
+// PressGamepadButton presses a named gamepad button (down + 40ms + up).
+func PressGamepadButton(name string) error {
+	name = strings.ToLower(name)
+	code, ok := GamepadButtons[name]
+	if !ok {
+		return fmt.Errorf("unknown gamepad button: %q", name)
+	}
+	return PressGamepadRaw(code)
+}
+
+// PressGamepadRaw presses a gamepad button by raw code (down + 40ms + up).
+func PressGamepadRaw(code int) error {
+	gp, err := getGamepad()
+	if err != nil {
+		return err
+	}
+	if err := gp.ButtonDown(code); err != nil {
+		return err
+	}
+	time.Sleep(40 * time.Millisecond)
+	return gp.ButtonUp(code)
+}
+
+// GamepadDPad presses a d-pad direction via Hat (press + 40ms + release).
+func GamepadDPad(direction string) error {
+	direction = strings.ToLower(direction)
+	dir, ok := DPadDirections[direction]
+	if !ok {
+		return fmt.Errorf("unknown d-pad direction: %q (use: up, down, left, right)", direction)
+	}
+	gp, err := getGamepad()
+	if err != nil {
+		return err
+	}
+	if err := gp.HatPress(dir); err != nil {
+		return err
+	}
+	time.Sleep(40 * time.Millisecond)
+	return gp.HatRelease(dir)
+}
+
 // KeyboardDevice abstracts uinput.Keyboard for testing.
 type KeyboardDevice interface {
 	KeyPress(key int) error
@@ -126,6 +241,12 @@ var KeyNames = map[string]int{
 	"leftmeta":   uinput.KeyLeftmeta,
 	"rightmeta":  uinput.KeyRightmeta,
 	"win":        uinput.KeyLeftmeta,
+
+	// Arcade keyboard aliases (default MAME-style mappings)
+	"coin":    6, // KEY_5
+	"start":   2, // KEY_1
+	"p2start": 3, // KEY_2
+	"p2coin":  7, // KEY_6
 }
 
 // namedCombos maps MiSTer action names that require key combos.

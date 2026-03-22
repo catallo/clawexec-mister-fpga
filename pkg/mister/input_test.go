@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	"github.com/bendahl/uinput"
 )
 
 // mockKeyboard records all key events for verification.
@@ -366,3 +368,317 @@ func (f *failingKeyboard) KeyUp(key int) error {
 }
 
 func (f *failingKeyboard) Close() error { return nil }
+
+// --- Gamepad tests ---
+
+// mockGamepad records all gamepad events for verification.
+type mockGamepad struct {
+	mu     sync.Mutex
+	events []gpEvent
+	err    error
+}
+
+type gpEvent struct {
+	action string // "press", "down", "up", "hat_press", "hat_release"
+	code   int
+}
+
+func (m *mockGamepad) ButtonPress(key int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	m.events = append(m.events, gpEvent{"press", key})
+	return nil
+}
+
+func (m *mockGamepad) ButtonDown(key int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	m.events = append(m.events, gpEvent{"down", key})
+	return nil
+}
+
+func (m *mockGamepad) ButtonUp(key int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	m.events = append(m.events, gpEvent{"up", key})
+	return nil
+}
+
+func (m *mockGamepad) HatPress(direction uinput.HatDirection) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	m.events = append(m.events, gpEvent{"hat_press", int(direction)})
+	return nil
+}
+
+func (m *mockGamepad) HatRelease(direction uinput.HatDirection) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.err != nil {
+		return m.err
+	}
+	m.events = append(m.events, gpEvent{"hat_release", int(direction)})
+	return nil
+}
+
+func (m *mockGamepad) Close() error { return nil }
+
+func (m *mockGamepad) getEvents() []gpEvent {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := make([]gpEvent, len(m.events))
+	copy(cp, m.events)
+	return cp
+}
+
+// withMockGamepad installs a mock gamepad and returns it.
+func withMockGamepad(t *testing.T) *mockGamepad {
+	t.Helper()
+	mock := &mockGamepad{}
+	origCreator := gamepadCreator
+	origInst := gpInst
+
+	gamepadCreator = func() (GamepadDevice, error) {
+		return mock, nil
+	}
+	gpInst = nil
+
+	t.Cleanup(func() {
+		gamepadCreator = origCreator
+		gpMu.Lock()
+		gpInst = origInst
+		gpMu.Unlock()
+	})
+
+	return mock
+}
+
+func TestPressGamepadButton_Named(t *testing.T) {
+	mock := withMockGamepad(t)
+
+	if err := PressGamepadButton("a"); err != nil {
+		t.Fatalf("PressGamepadButton(a): %v", err)
+	}
+
+	events := mock.getEvents()
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d: %v", len(events), events)
+	}
+	if events[0].action != "down" {
+		t.Errorf("expected down, got %s", events[0].action)
+	}
+	if events[0].code != GamepadButtons["a"] {
+		t.Errorf("expected button A code %d, got %d", GamepadButtons["a"], events[0].code)
+	}
+	if events[1].action != "up" {
+		t.Errorf("expected up, got %s", events[1].action)
+	}
+}
+
+func TestPressGamepadButton_AllNames(t *testing.T) {
+	required := []string{"a", "b", "x", "y", "start", "select", "l", "r", "coin"}
+	for _, name := range required {
+		if _, ok := GamepadButtons[name]; !ok {
+			t.Errorf("missing required gamepad button: %s", name)
+		}
+	}
+}
+
+func TestPressGamepadButton_CaseInsensitive(t *testing.T) {
+	mock := withMockGamepad(t)
+
+	if err := PressGamepadButton("START"); err != nil {
+		t.Fatalf("PressGamepadButton(START): %v", err)
+	}
+	if len(mock.getEvents()) != 2 {
+		t.Error("expected 2 events for case-insensitive button")
+	}
+}
+
+func TestPressGamepadButton_Unknown(t *testing.T) {
+	withMockGamepad(t)
+
+	err := PressGamepadButton("nonexistent")
+	if err == nil {
+		t.Fatal("expected error for unknown gamepad button")
+	}
+}
+
+func TestPressGamepadRaw(t *testing.T) {
+	mock := withMockGamepad(t)
+
+	if err := PressGamepadRaw(0x130); err != nil {
+		t.Fatalf("PressGamepadRaw(0x130): %v", err)
+	}
+
+	events := mock.getEvents()
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[0].code != 0x130 {
+		t.Errorf("expected code 0x130, got %d", events[0].code)
+	}
+}
+
+func TestGamepadDPad(t *testing.T) {
+	for _, dir := range []string{"up", "down", "left", "right"} {
+		t.Run(dir, func(t *testing.T) {
+			mock := withMockGamepad(t)
+
+			if err := GamepadDPad(dir); err != nil {
+				t.Fatalf("GamepadDPad(%s): %v", dir, err)
+			}
+
+			events := mock.getEvents()
+			if len(events) != 2 {
+				t.Fatalf("expected 2 events, got %d: %v", len(events), events)
+			}
+			if events[0].action != "hat_press" {
+				t.Errorf("expected hat_press, got %s", events[0].action)
+			}
+			if events[1].action != "hat_release" {
+				t.Errorf("expected hat_release, got %s", events[1].action)
+			}
+			expected := DPadDirections[dir]
+			if events[0].code != int(expected) {
+				t.Errorf("expected direction %d, got %d", expected, events[0].code)
+			}
+		})
+	}
+}
+
+func TestGamepadDPad_Unknown(t *testing.T) {
+	withMockGamepad(t)
+
+	err := GamepadDPad("diagonal")
+	if err == nil {
+		t.Fatal("expected error for unknown d-pad direction")
+	}
+}
+
+func TestGamepadDPad_CaseInsensitive(t *testing.T) {
+	mock := withMockGamepad(t)
+
+	if err := GamepadDPad("UP"); err != nil {
+		t.Fatalf("GamepadDPad(UP): %v", err)
+	}
+	if len(mock.getEvents()) != 2 {
+		t.Error("expected 2 events for case-insensitive direction")
+	}
+}
+
+func TestGamepadLazyInit(t *testing.T) {
+	created := 0
+	mock := &mockGamepad{}
+
+	origCreator := gamepadCreator
+	origInst := gpInst
+
+	gamepadCreator = func() (GamepadDevice, error) {
+		created++
+		return mock, nil
+	}
+	gpMu.Lock()
+	gpInst = nil
+	gpMu.Unlock()
+
+	t.Cleanup(func() {
+		gamepadCreator = origCreator
+		gpMu.Lock()
+		gpInst = origInst
+		gpMu.Unlock()
+	})
+
+	PressGamepadButton("a")
+	PressGamepadButton("b")
+	GamepadDPad("up")
+
+	if created != 1 {
+		t.Errorf("expected gamepad created once, got %d", created)
+	}
+}
+
+func TestGamepadCreationError(t *testing.T) {
+	origCreator := gamepadCreator
+	origInst := gpInst
+
+	gamepadCreator = func() (GamepadDevice, error) {
+		return nil, fmt.Errorf("no /dev/uinput")
+	}
+	gpMu.Lock()
+	gpInst = nil
+	gpMu.Unlock()
+
+	t.Cleanup(func() {
+		gamepadCreator = origCreator
+		gpMu.Lock()
+		gpInst = origInst
+		gpMu.Unlock()
+	})
+
+	err := PressGamepadButton("a")
+	if err == nil {
+		t.Fatal("expected error when gamepad creation fails")
+	}
+}
+
+func TestCloseGamepad(t *testing.T) {
+	mock := withMockGamepad(t)
+
+	PressGamepadButton("a")
+	_ = mock
+
+	CloseGamepad()
+
+	gpMu.Lock()
+	inst := gpInst
+	gpMu.Unlock()
+
+	if inst != nil {
+		t.Error("expected gpInst to be nil after CloseGamepad")
+	}
+}
+
+func TestKeyboardBackwardCompat(t *testing.T) {
+	// Verify existing keyboard commands still work alongside new aliases
+	mock := withMockKeyboard(t)
+
+	if err := PressKey("osd"); err != nil {
+		t.Fatalf("PressKey(osd) failed after gamepad additions: %v", err)
+	}
+	if len(mock.getEvents()) != 2 {
+		t.Error("keyboard osd should still produce 2 events")
+	}
+}
+
+func TestKeyboardArcadeAliases(t *testing.T) {
+	// Verify the new keyboard aliases exist
+	aliases := map[string]int{
+		"coin":    6,
+		"start":   2,
+		"p2start": 3,
+		"p2coin":  7,
+	}
+	for name, expected := range aliases {
+		code, ok := KeyNames[name]
+		if !ok {
+			t.Errorf("missing keyboard alias: %s", name)
+			continue
+		}
+		if code != expected {
+			t.Errorf("keyboard alias %s: expected %d, got %d", name, expected, code)
+		}
+	}
+}

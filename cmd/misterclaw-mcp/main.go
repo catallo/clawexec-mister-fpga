@@ -228,13 +228,15 @@ func toolsList() []ToolDef {
 		},
 		{
 			Name:        "mister_input",
-			Description: "Send keyboard input to MiSTer-FPGA via virtual uinput device. Use 'key' for named keys (osd, menu, confirm, up, down, left, right, core_select, screenshot, reset, user, pair_bluetooth, console, back, volume_up, volume_down). Use 'raw' for Linux keycodes. Use 'combo' for key combinations (e.g. ['leftalt', 'f12']).",
+			Description: "Send input to MiSTer-FPGA via virtual keyboard or gamepad. Use 'key' for named keyboard keys (osd, menu, confirm, up, down, left, right, coin, start). Use 'raw' for Linux keycodes. Use 'combo' for key combinations (e.g. ['leftalt', 'f12']). Use 'button' for gamepad buttons (a, b, x, y, start, select, l, r, coin). Use 'dpad' for gamepad d-pad (up, down, left, right). The 'button' and 'dpad' fields use the virtual gamepad device, which many arcade cores require for coin/start input.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"key":   map[string]interface{}{"type": "string", "description": "Named key to press (e.g. 'osd', 'menu', 'confirm', 'core_select')"},
-					"raw":   map[string]interface{}{"type": "number", "description": "Raw Linux keycode to press (e.g. 28 for Enter)"},
-					"combo": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Key combination to press (e.g. ['leftalt', 'f12'])"},
+					"key":    map[string]interface{}{"type": "string", "description": "Named keyboard key to press (e.g. 'osd', 'menu', 'confirm', 'core_select')"},
+					"raw":    map[string]interface{}{"type": "number", "description": "Raw Linux keycode to press (e.g. 28 for Enter)"},
+					"combo":  map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Key combination to press (e.g. ['leftalt', 'f12'])"},
+					"button": map[string]interface{}{"type": "string", "description": "Gamepad button to press (a, b, x, y, start, select, l, r, coin)"},
+					"dpad":   map[string]interface{}{"type": "string", "description": "Gamepad d-pad direction (up, down, left, right)"},
 				},
 			},
 		},
@@ -363,7 +365,11 @@ func callTool(params json.RawMessage) MCPToolResult {
 
 	case "mister_input":
 		req := map[string]interface{}{"mister": "input"}
-		if v, ok := args["key"].(string); ok && v != "" {
+		if v, ok := args["button"].(string); ok && v != "" {
+			req["button"] = v
+		} else if v, ok := args["dpad"].(string); ok && v != "" {
+			req["dpad"] = v
+		} else if v, ok := args["key"].(string); ok && v != "" {
 			req["key"] = v
 		} else if v, ok := args["raw"].(float64); ok {
 			req["raw"] = int(v)
@@ -374,7 +380,7 @@ func callTool(params json.RawMessage) MCPToolResult {
 			}
 			req["combo"] = combo
 		} else {
-			return errorResult("one of key, raw, or combo is required")
+			return errorResult("one of key, raw, combo, button, or dpad is required")
 		}
 		return doMisterCommand(req, formatInput)
 
@@ -665,7 +671,17 @@ func formatInput(resp map[string]interface{}) MCPToolResult {
 		errMsg, _ := resp["error"].(string)
 		return errorResult(fmt.Sprintf("Input failed: %s", errMsg))
 	}
+	device, _ := resp["device"].(string)
+	if button, ok := resp["button"].(string); ok {
+		return textResult(fmt.Sprintf("Pressed gamepad button: %s", button))
+	}
+	if dpad, ok := resp["dpad"].(string); ok {
+		return textResult(fmt.Sprintf("Pressed gamepad d-pad: %s", dpad))
+	}
 	if key, ok := resp["key"].(string); ok {
+		if device == "gamepad" {
+			return textResult(fmt.Sprintf("Pressed gamepad button: %s", key))
+		}
 		return textResult(fmt.Sprintf("Pressed key: %s", key))
 	}
 	if raw, ok := resp["raw"].(float64); ok {

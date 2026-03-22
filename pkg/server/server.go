@@ -49,6 +49,9 @@ type Request struct {
 	Key      string   `json:"key,omitempty"`
 	Raw      *int     `json:"raw,omitempty"`
 	Combo    []string `json:"combo,omitempty"`
+	Device   string   `json:"device,omitempty"`
+	Button   string   `json:"button,omitempty"`
+	DPad     string   `json:"dpad,omitempty"`
 
 	// CFG commands
 	Option string `json:"option,omitempty"`
@@ -415,8 +418,9 @@ func (s *Server) handleMiSTer(req Request, send func(interface{})) {
 
 	case "input":
 		switch {
-		case req.Key != "":
-			if err := mister.PressKey(req.Key); err != nil {
+		case req.Button != "":
+			// "button" field is shorthand for gamepad
+			if err := mister.PressGamepadButton(req.Button); err != nil {
 				send(map[string]interface{}{
 					"mister":  "input",
 					"success": false,
@@ -427,8 +431,56 @@ func (s *Server) handleMiSTer(req Request, send func(interface{})) {
 			send(map[string]interface{}{
 				"mister":  "input",
 				"success": true,
-				"key":     req.Key,
+				"button":  req.Button,
+				"device":  "gamepad",
 			})
+		case req.DPad != "":
+			// "dpad" field uses gamepad (explicit or default)
+			if err := mister.GamepadDPad(req.DPad); err != nil {
+				send(map[string]interface{}{
+					"mister":  "input",
+					"success": false,
+					"error":   err.Error(),
+				})
+				return
+			}
+			send(map[string]interface{}{
+				"mister":  "input",
+				"success": true,
+				"dpad":    req.DPad,
+				"device":  "gamepad",
+			})
+		case req.Key != "":
+			if req.Device == "gamepad" {
+				if err := mister.PressGamepadButton(req.Key); err != nil {
+					send(map[string]interface{}{
+						"mister":  "input",
+						"success": false,
+						"error":   err.Error(),
+					})
+					return
+				}
+				send(map[string]interface{}{
+					"mister":  "input",
+					"success": true,
+					"key":     req.Key,
+					"device":  "gamepad",
+				})
+			} else {
+				if err := mister.PressKey(req.Key); err != nil {
+					send(map[string]interface{}{
+						"mister":  "input",
+						"success": false,
+						"error":   err.Error(),
+					})
+					return
+				}
+				send(map[string]interface{}{
+					"mister":  "input",
+					"success": true,
+					"key":     req.Key,
+				})
+			}
 		case req.Raw != nil:
 			if err := mister.PressRawKey(*req.Raw); err != nil {
 				send(map[string]interface{}{
@@ -459,7 +511,7 @@ func (s *Server) handleMiSTer(req Request, send func(interface{})) {
 			})
 		default:
 			send(map[string]interface{}{
-				"error": "input requires key, raw, or combo parameter",
+				"error": "input requires key, raw, combo, button, or dpad parameter",
 			})
 		}
 

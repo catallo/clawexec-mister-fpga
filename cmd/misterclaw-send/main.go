@@ -558,7 +558,7 @@ func cmdShell(args []string) error {
 
 func cmdInput(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: misterclaw-send input <key|raw|combo> <value>")
+		return fmt.Errorf("usage: misterclaw-send input <key|raw|combo|button|dpad> <value>")
 	}
 
 	mode := args[0]
@@ -585,8 +585,18 @@ func cmdInput(args []string) error {
 			return fmt.Errorf("usage: misterclaw-send input combo <key1> <key2> ...\nExample: misterclaw-send input combo leftalt f12")
 		}
 		req = map[string]interface{}{"mister": "input", "combo": modeArgs}
+	case "button":
+		if len(modeArgs) == 0 {
+			return fmt.Errorf("usage: misterclaw-send input button <name>\nNames: a, b, x, y, start, select, l, r, coin")
+		}
+		req = map[string]interface{}{"mister": "input", "button": modeArgs[0]}
+	case "dpad":
+		if len(modeArgs) == 0 {
+			return fmt.Errorf("usage: misterclaw-send input dpad <direction>\nDirections: up, down, left, right")
+		}
+		req = map[string]interface{}{"mister": "input", "dpad": modeArgs[0]}
 	default:
-		return fmt.Errorf("unknown input mode: %s (use: key, raw, combo)", mode)
+		return fmt.Errorf("unknown input mode: %s (use: key, raw, combo, button, dpad)", mode)
 	}
 
 	resp, err := sendRequest(req)
@@ -748,18 +758,34 @@ func cmdCFGRead(args []string) error {
 	}
 
 	core, _ := resp["core_name"].(string)
-	cfgHex, _ := resp["cfg_hex"].(string)
+	dipPath, _ := resp["dip_path"].(string)
 	cfgPath, _ := resp["cfg_path"].(string)
 
 	fmt.Printf("Core: %s\n", core)
 	fmt.Printf("CFG:  %s\n", cfgPath)
-	fmt.Printf("Hex:  %s\n\n", cfgHex)
+	if dipPath != "" {
+		fmt.Printf("DIP:  %s\n", dipPath)
+	}
+	fmt.Println()
 
-	options, _ := resp["options"].([]interface{})
-	for _, o := range options {
+	settings, _ := resp["settings"].([]interface{})
+	lastSource := ""
+	for _, o := range settings {
 		opt, ok := o.(map[string]interface{})
 		if !ok {
 			continue
+		}
+		source, _ := opt["source"].(string)
+		if source != lastSource {
+			if lastSource != "" {
+				fmt.Println()
+			}
+			if source == "cfg" {
+				fmt.Println("Core Options:")
+			} else if source == "dip" {
+				fmt.Println("DIP Switches:")
+			}
+			lastSource = source
 		}
 		name, _ := opt["name"].(string)
 		val, _ := opt["value"].(float64)
@@ -819,7 +845,7 @@ COMMANDS:
   systems       List available systems and ROM counts
   screenshot    Take a screenshot (returns PNG)
   info          System information
-  input         Send keyboard input (key/raw/combo)
+  input         Send input (key/raw/combo/button/dpad)
   osd-info      Show OSD menu structure for current or specified core
   osd-visible   Show only visible OSD menu items (based on CFG state)
   cfg-read      Read current CFG file and decode option values
@@ -849,6 +875,9 @@ EXAMPLES:
   misterclaw-send input key osd
   misterclaw-send input raw 28
   misterclaw-send input combo leftalt f12
+  misterclaw-send input button a
+  misterclaw-send input button coin
+  misterclaw-send input dpad up
   misterclaw-send osd-info
   misterclaw-send osd-info --core SNES
   misterclaw-send osd-visible
@@ -942,7 +971,7 @@ func BuildRequest(cmd string, args []string) (map[string]interface{}, error) {
 		return req, nil
 	case "input":
 		if len(args) == 0 {
-			return nil, fmt.Errorf("input requires a mode: key, raw, or combo")
+			return nil, fmt.Errorf("input requires a mode: key, raw, combo, button, or dpad")
 		}
 		mode := args[0]
 		modeArgs := args[1:]
@@ -966,6 +995,16 @@ func BuildRequest(cmd string, args []string) (map[string]interface{}, error) {
 				return nil, fmt.Errorf("input combo requires at least one key")
 			}
 			return map[string]interface{}{"mister": "input", "combo": modeArgs}, nil
+		case "button":
+			if len(modeArgs) == 0 {
+				return nil, fmt.Errorf("input button requires a button name")
+			}
+			return map[string]interface{}{"mister": "input", "button": modeArgs[0]}, nil
+		case "dpad":
+			if len(modeArgs) == 0 {
+				return nil, fmt.Errorf("input dpad requires a direction")
+			}
+			return map[string]interface{}{"mister": "input", "dpad": modeArgs[0]}, nil
 		default:
 			return nil, fmt.Errorf("unknown input mode: %s", mode)
 		}
