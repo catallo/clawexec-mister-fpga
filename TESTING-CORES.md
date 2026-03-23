@@ -1,6 +1,6 @@
-# TESTING.md — Core Test Plan
+# TESTING-CORES.md — Core-by-Core Test Plan
 
-Track test coverage for all supported cores. Goal: verify launch, search, OSD navigation, and settings for each core.
+Track test coverage for all supported cores. Goal: verify launch, search, OSD navigation, and settings work reliably before adding new features.
 
 ## Test Checklist
 
@@ -11,7 +11,17 @@ For each core, test:
 4. **OSD Sub-page** — Navigate to an option in a sub-menu (if core has sub-pages)
 5. **Screenshot** — Verify game is running
 
-Mark: ✅ pass, ❌ fail (with note), ⬜ not tested, ➖ not applicable
+Mark: ✅ pass, ❌ fail (with note), ⬜ not tested, ➖ n/a
+
+## Special Core Rules (systemDefaults → PostLaunch)
+
+Some cores need special handling beyond standard MGL launch. These are configured via `PostLaunch` in `pkg/mister/games.go`:
+
+| Core | PostLaunch | Details |
+|------|-----------|---------|
+| PC8801 | OSD Reset | Floppy-boot: load .d88 via MGL, then OSD reset to boot from disk (4s delay) |
+
+More cores may need PostLaunch rules as testing reveals them (e.g. other floppy-based computers).
 
 ## Console Cores
 
@@ -58,9 +68,9 @@ Mark: ✅ pass, ❌ fail (with note), ⬜ not tested, ➖ not applicable
 
 | Core | Search | Launch | OSD Nav | OSD Sub | Screenshot | Notes |
 |------|--------|--------|---------|---------|------------|-------|
-| PC8801 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | PostLaunch OSD reset |
+| PC8801 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | PostLaunch OSD reset, floppy-boot |
 | X68000 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | HDF via subdirs |
-| MSX | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | VHD-based |
+| MSX | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | VHD-based, no individual game launch |
 | ao486 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | C64 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | C128 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
@@ -80,7 +90,7 @@ Mark: ✅ pass, ❌ fail (with note), ⬜ not tested, ➖ not applicable
 ## Known Issues
 
 - **NES**: off-by-one OSD navigation (hidden "Custom Palette" file_load counted)
-- **Floppy cores**: PostLaunch OSD reset needed (only PC-8801 configured so far)
+- **Floppy cores**: PostLaunch OSD reset needed — only PC-8801 configured so far
 - **VHD cores**: MSX, some X68000 — no individual game launch, boots into OS
 
 ## Test Log

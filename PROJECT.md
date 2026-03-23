@@ -189,4 +189,4 @@ scp misterclaw root@10.0.0.8:/media/fat/Scripts/
 - **Zero config** — works out of the box with no config file needed
 
 ## Testing
-See [TESTING.md](TESTING.md) for the core-by-core test plan. Current focus: stability over features.
+See [TESTING-CORES.md](TESTING-CORES.md) for the core-by-core test plan. Current focus: stability over features.
