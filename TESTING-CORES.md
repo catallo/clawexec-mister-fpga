@@ -13,15 +13,17 @@ For each core, test:
 
 Mark: ✅ pass, ❌ fail (with note), ⬜ not tested, ➖ n/a
 
-## Special Core Rules (systemDefaults → PostLaunch)
+## Core Overrides
 
-Some cores need special handling beyond standard MGL launch. These are configured via `PostLaunch` in `pkg/mister/games.go`:
+Some cores need special handling beyond standard MGL launch. Configured in `pkg/mister/games.go` (`systemDefaults`).
 
-| Core | PostLaunch | Details |
-|------|-----------|---------|
-| PC8801 | OSD Reset | Floppy-boot: load .d88 via MGL, then OSD reset to boot from disk (4s delay) |
+| Core | Override | Details |
+|------|----------|---------|
+| PC8801 | OSD reset after launch | Floppy-boot: load .d88 via MGL, then reset to boot from disk (4s delay) |
+| MSX | VHD-based, no game launch | Boots into OS from VHD, no individual ROM loading |
+| X68000 | ROMs in subdirectory | Games under `GamesHDF/`, not top-level |
 
-More cores may need PostLaunch rules as testing reveals them (e.g. other floppy-based computers).
+This table grows as testing reveals more cores that need special handling.
 
 ## Console Cores
 
