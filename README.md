@@ -2,7 +2,7 @@
 
 MiSTerClaw is the first MCP server for MiSTer-FPGA. Control your MiSTer from any AI agent.
 
-![Version](https://img.shields.io/badge/Version-v0.5.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.6.0-blue)
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-ARMv7_(DE10--Nano)-blue)
