@@ -992,13 +992,6 @@ func isOSDSubPageItem(item MenuItem) bool {
 		"sub_page", "separator",
 		"hide", "hide_inverted", "disable", "disable_inverted":
 		return false
-	case "file_load", "file_load_core", "mount":
-		// File load items on sub-pages are almost always conditionally
-		// hidden by runtime FPGA status bits we can't read. Skip them
-		// to avoid position miscalculation.
-		if item.PageID > 0 && len(item.HideConditions) > 0 {
-			return false
-		}
 	}
 	// option_hidden and trigger_hidden are navigable on sub-pages
 	// (MiSTer "hidden" means conditionally visible, not permanently hidden)
