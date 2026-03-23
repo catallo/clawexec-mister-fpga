@@ -311,6 +311,28 @@ func toolsList() []ToolDef {
 				},
 			},
 		},
+		{
+			Name:        "mister_osd_navigate",
+			Description: "Navigate to a specific OSD menu item by name. Opens the OSD (F12) and navigates to the target item using conf_str-based position calculation. Works for Reset, options, file mounts, triggers etc. Uses the currently loaded core.",
+			InputSchema: map[string]interface{}{
+				"type":     "object",
+				"required": []string{"target"},
+				"properties": map[string]interface{}{
+					"target": map[string]interface{}{"type": "string", "description": "Menu item name to navigate to (e.g. 'Reset', 'FDD0', 'Aspect ratio')"},
+				},
+			},
+		},
+		{
+			Name:        "mister_system_info",
+			Description: "Get detailed system information including core config, keyboard mapping notes, and full OSD menu structure parsed from conf_str. Useful for understanding core capabilities before interacting.",
+			InputSchema: map[string]interface{}{
+				"type":     "object",
+				"required": []string{"system"},
+				"properties": map[string]interface{}{
+					"system": map[string]interface{}{"type": "string", "description": "System name (e.g. 'PC8801', 'SNES', 'Genesis')"},
+				},
+			},
+		},
 	}
 }
 
@@ -452,6 +474,28 @@ func callTool(params json.RawMessage) MCPToolResult {
 			req["location"] = v
 		}
 		return doMisterCommand(req, formatRescan)
+
+	case "mister_osd_navigate":
+		target, _ := args["target"].(string)
+		if target == "" {
+			return errorResult("target is required")
+		}
+		req := map[string]interface{}{
+			"mister": "osd_navigate",
+			"target": target,
+		}
+		return doMisterCommand(req, formatOSDNavigate)
+
+	case "mister_system_info":
+		system, _ := args["system"].(string)
+		if system == "" {
+			return errorResult("system is required")
+		}
+		req := map[string]interface{}{
+			"mister": "system_info",
+			"system": system,
+		}
+		return doMisterCommand(req, formatSystemInfo)
 
 	default:
 		return errorResult(fmt.Sprintf("unknown tool: %s", p.Name))
@@ -897,6 +941,104 @@ func formatRescan(resp map[string]interface{}) MCPToolResult {
 	systemsFound, _ := resp["systems_found"].(float64)
 	location, _ := resp["location"].(string)
 	return textResult(fmt.Sprintf("Rescan complete: %d systems found (location: %s)", int(systemsFound), location))
+}
+
+func formatOSDNavigate(resp map[string]interface{}) MCPToolResult {
+	if success, ok := resp["success"].(bool); ok && !success {
+		errMsg, _ := resp["error"].(string)
+		return errorResult(errMsg)
+	}
+
+	target, _ := resp["target"].(string)
+	core, _ := resp["core"].(string)
+	text := fmt.Sprintf("Navigated to: %s", target)
+	if core != "" {
+		text += fmt.Sprintf(" (core: %s)", core)
+	}
+	return textResult(text)
+}
+
+func formatSystemInfo(resp map[string]interface{}) MCPToolResult {
+	if success, ok := resp["success"].(bool); ok && !success {
+		errMsg, _ := resp["error"].(string)
+		return errorResult(errMsg)
+	}
+
+	system, _ := resp["system"].(string)
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("System: %s\n", system))
+
+	if config, ok := resp["config"].(map[string]interface{}); ok {
+		if core, ok := config["core"].(string); ok {
+			sb.WriteString(fmt.Sprintf("Core: %s\n", core))
+		}
+		if romType, ok := config["type"].(string); ok {
+			sb.WriteString(fmt.Sprintf("ROM type: %s\n", romType))
+		}
+		if index, ok := config["index"].(float64); ok {
+			sb.WriteString(fmt.Sprintf("Index: %d\n", int(index)))
+		}
+		if exts, ok := config["extensions"].([]interface{}); ok && len(exts) > 0 {
+			extStrs := make([]string, len(exts))
+			for i, e := range exts {
+				extStrs[i], _ = e.(string)
+			}
+			sb.WriteString(fmt.Sprintf("Extensions: %s\n", strings.Join(extStrs, ", ")))
+		}
+	}
+
+	if notes, ok := resp["notes"].(string); ok && notes != "" {
+		sb.WriteString(fmt.Sprintf("\nNotes:\n%s\n", notes))
+	}
+
+	if coreName, ok := resp["core_name"].(string); ok && coreName != "" {
+		sb.WriteString(fmt.Sprintf("\nOSD Core: %s\n", coreName))
+	}
+
+	if menu, ok := resp["menu"].([]interface{}); ok && len(menu) > 0 {
+		sb.WriteString("\nOSD Menu:\n")
+		for _, m := range menu {
+			item, ok := m.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			typ, _ := item["type"].(string)
+			name, _ := item["name"].(string)
+
+			switch typ {
+			case "separator":
+				sb.WriteString("  ────────────\n")
+			case "label":
+				sb.WriteString(fmt.Sprintf("  [%s]\n", name))
+			case "option", "option_hidden":
+				values, _ := item["values"].([]interface{})
+				vals := make([]string, len(values))
+				for i, v := range values {
+					vals[i], _ = v.(string)
+				}
+				sb.WriteString(fmt.Sprintf("  Option: %s = [%s]\n", name, strings.Join(vals, ", ")))
+			case "trigger", "trigger_hidden":
+				sb.WriteString(fmt.Sprintf("  Trigger: %s\n", name))
+			case "file_load", "file_load_core":
+				label, _ := item["label"].(string)
+				exts, _ := item["extensions"].([]interface{})
+				extStrs := make([]string, len(exts))
+				for i, e := range exts {
+					extStrs[i], _ = e.(string)
+				}
+				sb.WriteString(fmt.Sprintf("  File: %s (%s)\n", label, strings.Join(extStrs, ", ")))
+			case "mount":
+				label, _ := item["label"].(string)
+				sb.WriteString(fmt.Sprintf("  Mount: %s\n", label))
+			case "reset":
+				sb.WriteString(fmt.Sprintf("  Reset: %s\n", name))
+			default:
+				sb.WriteString(fmt.Sprintf("  %s: %s\n", typ, name))
+			}
+		}
+	}
+
+	return textResult(sb.String())
 }
 
 // Result helpers

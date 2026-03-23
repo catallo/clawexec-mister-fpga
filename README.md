@@ -2,14 +2,14 @@
 
 MiSTerClaw is the first MCP server for MiSTer-FPGA. Control your MiSTer from any AI agent.
 
-![Version](https://img.shields.io/badge/Version-v0.4.0-blue)
+![Version](https://img.shields.io/badge/Version-v0.5.0-blue)
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-ARMv7_(DE10--Nano)-blue)
 
 ## What is this?
 
-MiSTerClaw lets AI agents — Claude, ChatGPT, OpenClaw, Hermes, Cursor, and others — control a MiSTer-FPGA over the network. Launch games, search your ROM library, take screenshots, read and modify core settings and DIP switches, navigate the OSD menu, manage the system, and even set up Tailscale VPN for secure remote access from anywhere. It uses the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) standard, so any MCP-compatible client works out of the box. For agents without MCP support, a CLI client is also included.
+MiSTerClaw lets AI agents — Claude, ChatGPT, OpenClaw, Hermes, Cursor, and others — control a MiSTer-FPGA over the network. Launch games, search your ROM library, take screenshots, read and modify core settings and DIP switches, navigate the OSD menu using conf_str-based position calculation, query detailed system information, manage the system, and even set up Tailscale VPN for secure remote access from anywhere. Floppy-disk cores (PC8801, MSX, etc.) support PostLaunch auto-reset for seamless game loading. It uses the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) standard, so any MCP-compatible client works out of the box. For agents without MCP support, a CLI client is also included.
 
 ## MCP Setup
 
@@ -55,6 +55,8 @@ Add MiSTerClaw to your MCP client config:
 | `mister_cfg_read` | Read core settings (options + DIP switches) |
 | `mister_cfg_write` | Modify core settings with automatic backup |
 | `mister_reload` | Reload current core to apply config changes |
+| `mister_osd_navigate` | Navigate to a specific OSD menu item by name |
+| `mister_system_info` | Get system config, notes, and OSD menu for a system |
 | `mister_rescan` | Rescan ROM library (optionally for specific drive) |
 | `mister_tailscale` | Manage Tailscale VPN |
 | `mister_shell` | Execute shell commands |
@@ -100,6 +102,14 @@ Agent: R-Type (M72 core) has these settings:
 You: "Enable No Death Mode"
 Agent: ⚙️ Set "No Death Mode" to On in R-Type.
        The core reloads automatically — change is live!
+
+You: "Navigate to the Reset option in the OSD"
+Agent: Navigated to Reset in the SNES core OSD.
+
+You: "What do I need to know about the PC8801 system?"
+Agent: PC8801 uses the PC8801 core with .d88 floppy disk images.
+       Notes: After loading a disk, press F12 → Reset to boot.
+       OSD Menu: FDD0, FDD1, Reset, CPU Speed, ...
 ```
 
 ## CLI Client
@@ -137,6 +147,14 @@ misterclaw-send -H mister-fpga input combo leftalt f12
 # Query OSD menu structure
 misterclaw-send -H mister-fpga osd-info
 misterclaw-send -H mister-fpga osd-info --core SNES
+
+# Navigate to a specific OSD menu item
+misterclaw-send -H mister-fpga osd-navigate Reset
+misterclaw-send -H mister-fpga osd-navigate "Aspect ratio"
+
+# Get detailed system info (config, notes, OSD menu)
+misterclaw-send -H mister-fpga system-info PC8801
+misterclaw-send -H mister-fpga system-info SNES
 
 # Read core settings (options + DIP switches)
 misterclaw-send -H mister-fpga cfg-read

@@ -87,6 +87,10 @@ func main() {
 		err = cmdReload()
 	case "rescan":
 		err = cmdRescan(cmdArgs)
+	case "osd-navigate":
+		err = cmdOSDNavigate(cmdArgs)
+	case "system-info":
+		err = cmdSystemInfo(cmdArgs)
 	case "discover":
 		err = cmdDiscover()
 	case "help":
@@ -876,6 +880,129 @@ func cmdRescan(args []string) error {
 	return nil
 }
 
+func cmdOSDNavigate(args []string) error {
+	target := strings.Join(args, " ")
+	if target == "" {
+		return fmt.Errorf("usage: misterclaw-send osd-navigate <target>\nExample: misterclaw-send osd-navigate Reset")
+	}
+
+	resp, err := sendRequest(map[string]interface{}{
+		"mister": "osd_navigate",
+		"target": target,
+	})
+	if err != nil {
+		return err
+	}
+
+	if jsonFlag {
+		outputJSON(resp)
+		return nil
+	}
+
+	tgt, _ := resp["target"].(string)
+	core, _ := resp["core"].(string)
+	fmt.Printf("Navigated to: %s", tgt)
+	if core != "" {
+		fmt.Printf(" (core: %s)", core)
+	}
+	fmt.Println()
+	return nil
+}
+
+func cmdSystemInfo(args []string) error {
+	system := strings.Join(args, " ")
+	if system == "" {
+		return fmt.Errorf("usage: misterclaw-send system-info <system>\nExample: misterclaw-send system-info PC8801")
+	}
+
+	resp, err := sendRequest(map[string]interface{}{
+		"mister": "system_info",
+		"system": system,
+	})
+	if err != nil {
+		return err
+	}
+
+	if jsonFlag {
+		outputJSON(resp)
+		return nil
+	}
+
+	fmt.Printf("System: %s\n", system)
+
+	if config, ok := resp["config"].(map[string]interface{}); ok {
+		if core, ok := config["core"].(string); ok {
+			fmt.Printf("Core: %s\n", core)
+		}
+		if romType, ok := config["type"].(string); ok {
+			fmt.Printf("ROM type: %s\n", romType)
+		}
+		if index, ok := config["index"].(float64); ok {
+			fmt.Printf("Index: %d\n", int(index))
+		}
+		if exts, ok := config["extensions"].([]interface{}); ok && len(exts) > 0 {
+			extStrs := make([]string, len(exts))
+			for i, e := range exts {
+				extStrs[i], _ = e.(string)
+			}
+			fmt.Printf("Extensions: %s\n", strings.Join(extStrs, ", "))
+		}
+	}
+
+	if notes, ok := resp["notes"].(string); ok && notes != "" {
+		fmt.Printf("\nNotes:\n%s\n", notes)
+	}
+
+	if coreName, ok := resp["core_name"].(string); ok && coreName != "" {
+		fmt.Printf("\nOSD Core: %s\n", coreName)
+	}
+
+	if menu, ok := resp["menu"].([]interface{}); ok && len(menu) > 0 {
+		fmt.Println("\nOSD Menu:")
+		for _, m := range menu {
+			item, ok := m.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			typ, _ := item["type"].(string)
+			name, _ := item["name"].(string)
+
+			switch typ {
+			case "separator":
+				fmt.Println("  ────────────")
+			case "label":
+				fmt.Printf("  [%s]\n", name)
+			case "option", "option_hidden":
+				values, _ := item["values"].([]interface{})
+				vals := make([]string, len(values))
+				for i, v := range values {
+					vals[i], _ = v.(string)
+				}
+				fmt.Printf("  Option: %s = [%s]\n", name, strings.Join(vals, ", "))
+			case "trigger", "trigger_hidden":
+				fmt.Printf("  Trigger: %s\n", name)
+			case "file_load", "file_load_core":
+				label, _ := item["label"].(string)
+				exts, _ := item["extensions"].([]interface{})
+				extStrs := make([]string, len(exts))
+				for i, e := range exts {
+					extStrs[i], _ = e.(string)
+				}
+				fmt.Printf("  File: %s (%s)\n", label, strings.Join(extStrs, ", "))
+			case "mount":
+				label, _ := item["label"].(string)
+				fmt.Printf("  Mount: %s\n", label)
+			case "reset":
+				fmt.Printf("  Reset: %s\n", name)
+			default:
+				raw, _ := item["raw"].(string)
+				fmt.Printf("  %s: %s\n", typ, raw)
+			}
+		}
+	}
+	return nil
+}
+
 func printHelp() {
 	fmt.Print(`MisterClaw — Remote control for MiSTer-FPGA retro gaming platform.
 
@@ -895,6 +1022,8 @@ COMMANDS:
   input         Send input (key/raw/combo)
   osd-info      Show OSD menu structure for current or specified core
   osd-visible   Show only visible OSD menu items (based on CFG state)
+  osd-navigate  Navigate to a specific OSD menu item by name
+  system-info   Get system config, notes, and OSD menu for a system
   cfg-read      Read current CFG file and decode option values
   cfg-write     Set a core option by name (with automatic backup)
   reload        Reload current core (apply config changes)
@@ -927,6 +1056,10 @@ EXAMPLES:
   misterclaw-send osd-info
   misterclaw-send osd-info --core SNES
   misterclaw-send osd-visible
+  misterclaw-send osd-navigate Reset
+  misterclaw-send osd-navigate "Aspect ratio"
+  misterclaw-send system-info PC8801
+  misterclaw-send system-info SNES
   misterclaw-send cfg-read
   misterclaw-send cfg-write --option "Free Play" --value On
   misterclaw-send -H mister-fpga reload
@@ -1069,6 +1202,18 @@ func BuildRequest(cmd string, args []string) (map[string]interface{}, error) {
 			req["core"] = coreName
 		}
 		return req, nil
+	case "osd-navigate":
+		target := strings.Join(args, " ")
+		if target == "" {
+			return nil, fmt.Errorf("osd-navigate requires a target")
+		}
+		return map[string]interface{}{"mister": "osd_navigate", "target": target}, nil
+	case "system-info":
+		system := strings.Join(args, " ")
+		if system == "" {
+			return nil, fmt.Errorf("system-info requires a system name")
+		}
+		return map[string]interface{}{"mister": "system_info", "system": system}, nil
 	case "cfg-read":
 		coreName, _ := extractFlag(args, "core", "c")
 		req := map[string]interface{}{"mister": "cfg_read"}
