@@ -42,7 +42,7 @@ This table grows as testing reveals more cores that need special handling.
 | PSX | ⬜ | ⬜ | ✅ | ⬜ | ⬜ | |
 | Saturn | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | N64 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
-| PCEngine (TGFX16) | ✅ | ✅ | ✅ | ➖ | ⚠️ | Screenshot = schwarz (HW); TGFX16-Alias-Bug gefixt |
+| PCEngine (TGFX16) | ✅ | ✅ | ✅ | ✅ | ⚠️ | Aspect ratio Sub-page ✅; TGFX16-Alias + Apostroph-Bug gefixt |
 | TurboGrafx16 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | TGFX16CD | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | SuperGrafx | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
@@ -104,6 +104,8 @@ This table grows as testing reveals more cores that need special handling.
 - OSD Sub-page: ➖ nicht getestet (wenige Sub-Pages)
 - Screenshot: ⚠️ schwarzes Bild (Framebuffer-Problem, nicht Core-Problem)
 - **Bug:** TGFX16 Ordner nicht als System erkannt → Alias `TGFX16` in systemDefaults hinzugefügt
+- **Bug:** Apostrophe in Dateinamen (Bomberman '94) → `&#39;` XML-Escape in MGL-Pfaden bricht MiSTer → Fix: raw single quotes
+- OSD Sub-page "Aspect ratio": ✅ Cursor korrekt positioniert
 
 
 Record test sessions here with date and findings.
