@@ -32,3 +32,4 @@ Thumbs.db
 /confstr-update
 /confstr_db.json
 community/
+build/
