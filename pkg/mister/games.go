@@ -95,6 +95,8 @@ var systemDefaults = map[string]SystemConfig{
 	"Altair8800":  {Core: "_Computer/Altair8800", Delay: 1, Type: "f", Index: 1, Extensions: []string{".bin"}},
 	"PDP1":        {Core: "_Computer/PDP1", Delay: 1, Type: "f", Index: 1, Extensions: []string{".bin", ".rim"}},
 	"PET":         {Core: "_Computer/PET2001", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg"}},
+	"PC8801":      {Core: "_Computer/PC88", Delay: 1, Type: "s", Index: 0, Extensions: []string{".d88"}},
+
 }
 
 // GetSystemConfig returns the config for a system name (case-insensitive).
