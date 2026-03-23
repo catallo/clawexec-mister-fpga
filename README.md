@@ -7,6 +7,8 @@ MiSTerClaw is the first MCP server for MiSTer-FPGA. Control your MiSTer from any
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Platform](https://img.shields.io/badge/Platform-ARMv7_(DE10--Nano)-blue)
 
+[![MiSTerClaw MCP server](https://glama.ai/mcp/servers/catallo/misterclaw/badges/card.svg)](https://glama.ai/mcp/servers/catallo/misterclaw)
+
 ## What is this?
 
 MiSTerClaw lets AI agents — Claude, ChatGPT, OpenClaw, Hermes, Cursor, and others — control a MiSTer-FPGA over the network. Launch games, search your ROM library, take screenshots, read and modify core settings and DIP switches, navigate the OSD menu, manage the system, and even set up Tailscale VPN for secure remote access from anywhere. It uses the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) standard, so any MCP-compatible client works out of the box. For agents without MCP support, a CLI client is also included.
