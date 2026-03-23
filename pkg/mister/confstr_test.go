@@ -119,10 +119,13 @@ func TestParseConfStr_DIP(t *testing.T) {
 func TestParseConfStr_SubPage(t *testing.T) {
 	items := ParseConfStr("CORE;;P1,Audio Settings;O12,Volume,Low,High;P1O34,Bass,Off,On")
 	var subPage *MenuItem
+	var bassOpt *MenuItem
 	for i := range items {
 		if items[i].Type == "sub_page" {
 			subPage = &items[i]
-			break
+		}
+		if items[i].Name == "Bass" {
+			bassOpt = &items[i]
 		}
 	}
 	if subPage == nil {
@@ -130,6 +133,22 @@ func TestParseConfStr_SubPage(t *testing.T) {
 	}
 	if subPage.PageID != 1 || subPage.Name != "Audio Settings" {
 		t.Errorf("expected page 1 Audio Settings, got page %d %s", subPage.PageID, subPage.Name)
+	}
+	// P1O34,Bass,Off,On should be parsed as an option on page 1, not a sub_page
+	if bassOpt == nil {
+		t.Fatal("expected Bass option parsed from P1O34,Bass,Off,On")
+	}
+	if bassOpt.Type != "option" {
+		t.Errorf("Bass type = %q, want option", bassOpt.Type)
+	}
+	if bassOpt.PageID != 1 {
+		t.Errorf("Bass PageID = %d, want 1", bassOpt.PageID)
+	}
+	if bassOpt.Bit != 3 || bassOpt.BitHigh != 4 {
+		t.Errorf("Bass bits = %d-%d, want 3-4", bassOpt.Bit, bassOpt.BitHigh)
+	}
+	if len(bassOpt.Values) != 2 || bassOpt.Values[0] != "Off" || bassOpt.Values[1] != "On" {
+		t.Errorf("Bass values = %v, want [Off On]", bassOpt.Values)
 	}
 }
 
@@ -575,34 +594,38 @@ func TestStripCoreDateSuffix(t *testing.T) {
 
 func TestIsOSDTopLevelItem(t *testing.T) {
 	tests := []struct {
-		typ  string
-		want bool
+		typ    string
+		pageID int
+		want   bool
 	}{
-		{"option", true},
-		{"trigger", true},
-		{"reset", true},
-		{"separator", true},
-		{"mount", true},
-		{"file_load", true},
-		{"file_load_core", true},
-		{"cheat", true},
-		{"dip", true},
-		{"label", false},
-		{"joystick", false},
-		{"version", false},
-		{"info", false},
-		{"option_hidden", false},
-		{"trigger_hidden", false},
-		{"sub_page", false},
-		{"hide", false},
-		{"hide_inverted", false},
-		{"disable", false},
-		{"disable_inverted", false},
+		{"option", 0, true},
+		{"trigger", 0, true},
+		{"reset", 0, true},
+		{"separator", 0, true},
+		{"mount", 0, true},
+		{"file_load", 0, true},
+		{"file_load_core", 0, true},
+		{"cheat", 0, true},
+		{"dip", 0, true},
+		{"sub_page", 1, true},  // page entries are navigable in top-level
+		{"option", 1, false},   // items ON a sub-page are not top-level
+		{"trigger", 1, false},
+		{"separator", 1, false},
+		{"label", 0, false},
+		{"joystick", 0, false},
+		{"version", 0, false},
+		{"info", 0, false},
+		{"option_hidden", 0, false},
+		{"trigger_hidden", 0, false},
+		{"hide", 0, false},
+		{"hide_inverted", 0, false},
+		{"disable", 0, false},
+		{"disable_inverted", 0, false},
 	}
 	for _, tt := range tests {
-		got := isOSDTopLevelItem(MenuItem{Type: tt.typ})
+		got := isOSDTopLevelItem(MenuItem{Type: tt.typ, PageID: tt.pageID})
 		if got != tt.want {
-			t.Errorf("isOSDTopLevelItem(%q) = %v, want %v", tt.typ, got, tt.want)
+			t.Errorf("isOSDTopLevelItem(type=%q, pageID=%d) = %v, want %v", tt.typ, tt.pageID, got, tt.want)
 		}
 	}
 }
@@ -615,7 +638,7 @@ func TestFindOSDItemPosition_PC8801(t *testing.T) {
 		},
 	}
 
-	pos, err := FindOSDItemPosition(db, "PC8801", "Reset", nil)
+	loc, err := FindOSDItemPosition(db, "PC8801", "Reset", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,17 +647,20 @@ func TestFindOSDItemPosition_PC8801(t *testing.T) {
 	// sep(7) FDD0(8) FDD1(9) SYNC_FD0(10) SYNC_FD1(11)
 	// sep(12) Basic(13) Cols(14) Lines(15) Disk_boot(16)
 	// sep(17) Input(18) SoundBoard2(19) sep(20) Reset(21)
-	if pos != 21 {
-		t.Errorf("PC8801 Reset: expected position 21, got %d", pos)
+	if loc.Position != 21 {
+		t.Errorf("PC8801 Reset: expected position 21, got %d", loc.Position)
+	}
+	if loc.OnSubPage {
+		t.Error("PC8801 Reset should not be on a sub-page")
 	}
 
 	// Test finding mount by label
-	pos, err = FindOSDItemPosition(db, "PC8801", "FDD0", nil)
+	loc, err = FindOSDItemPosition(db, "PC8801", "FDD0", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pos != 8 {
-		t.Errorf("PC8801 FDD0: expected position 8, got %d", pos)
+	if loc.Position != 8 {
+		t.Errorf("PC8801 FDD0: expected position 8, got %d", loc.Position)
 	}
 }
 
@@ -647,13 +673,13 @@ func TestFindOSDItemPosition_SimpleCore(t *testing.T) {
 	}
 
 	// Visible: file_load(0), sep(1), option(2), trigger"Reset"(3), reset"Reset"(4)
-	pos, err := FindOSDItemPosition(db, "MYCORE", "Reset", nil)
+	loc, err := FindOSDItemPosition(db, "MYCORE", "Reset", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// First "Reset" match is the trigger at position 3
-	if pos != 3 {
-		t.Errorf("SimpleCore Reset: expected position 3, got %d", pos)
+	if loc.Position != 3 {
+		t.Errorf("SimpleCore Reset: expected position 3, got %d", loc.Position)
 	}
 }
 
@@ -685,13 +711,56 @@ func TestFindOSDItemPosition_FuzzyMatch(t *testing.T) {
 		},
 	}
 	// PC88 should match PC8801 via repo name
-	pos, err := FindOSDItemPosition(db, "PC88", "Reset", nil)
+	loc, err := FindOSDItemPosition(db, "PC88", "Reset", nil)
 	if err != nil {
 		t.Fatalf("fuzzy match PC88 → PC8801 failed: %v", err)
 	}
 	// sep(0), Reset(1)
-	if pos != 1 {
-		t.Errorf("expected position 1, got %d", pos)
+	if loc.Position != 1 {
+		t.Errorf("expected position 1, got %d", loc.Position)
+	}
+}
+
+func TestFindOSDItemPosition_SubPage(t *testing.T) {
+	// Core with sub-page: top-level has options + page entry, sub-page has more options
+	raw := "TESTCORE;;S0,CHDCUE,CD ROM;-;O12,Aspect Ratio,Original,Full Screen;P1,Video & Audio;-;R0,Reset;P1O34,Widescreen,No,Yes;P1O5,Vertical Crop,No,Yes;P1-;P1O67,Scale,Normal,V-Integer,Narrower,Wider"
+	db := &ConfStrDB{
+		Cores: []CoreOSD{
+			{CoreName: "TESTCORE", ConfStrRaw: raw},
+		},
+	}
+
+	// Top-level: mount(0) sep(1) Aspect(2) Video&Audio(3) sep(4) Reset(5)
+	loc, err := FindOSDItemPosition(db, "TESTCORE", "Reset", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loc.Position != 5 || loc.OnSubPage {
+		t.Errorf("Reset: expected top-level position 5, got position %d onSubPage=%v", loc.Position, loc.OnSubPage)
+	}
+
+	// Sub-page item: Widescreen is on page 1, position 0
+	loc, err = FindOSDItemPosition(db, "TESTCORE", "Widescreen", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loc.OnSubPage || loc.PageID != 1 {
+		t.Errorf("Widescreen: expected on sub-page 1, got onSubPage=%v pageID=%d", loc.OnSubPage, loc.PageID)
+	}
+	if loc.Position != 0 {
+		t.Errorf("Widescreen: expected sub-page position 0, got %d", loc.Position)
+	}
+	if loc.PagePosition != 3 {
+		t.Errorf("Widescreen: expected page entry at top-level position 3, got %d", loc.PagePosition)
+	}
+
+	// Sub-page item: Scale is on page 1, position 3 (Widescreen(0), VCrop(1), sep(2), Scale(3))
+	loc, err = FindOSDItemPosition(db, "TESTCORE", "Scale", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loc.OnSubPage || loc.Position != 3 {
+		t.Errorf("Scale: expected sub-page position 3, got position %d onSubPage=%v", loc.Position, loc.OnSubPage)
 	}
 }
 

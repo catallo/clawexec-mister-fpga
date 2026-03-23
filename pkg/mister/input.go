@@ -600,13 +600,15 @@ func pressCombo(codes []int) error {
 // the conf_str database to calculate the correct position.
 // coreName is the core identifier (e.g. "PC88", "SNES") — date suffixes
 // are stripped and fuzzy matching is used against the conf_str DB.
+// Supports items on sub-pages: navigates to the page entry, presses Right
+// to enter the sub-page, then navigates to the target item within it.
 func OSDNavigateTo(coreName, target string) error {
 	db, err := GetConfStrDB()
 	if err != nil {
 		return fmt.Errorf("loading confstr db: %w", err)
 	}
 
-	pos, err := FindOSDItemPosition(db, coreName, target, nil)
+	loc, err := FindOSDItemPosition(db, coreName, target, nil)
 	if err != nil {
 		return err
 	}
@@ -617,8 +619,23 @@ func OSDNavigateTo(coreName, target string) error {
 	}
 	time.Sleep(500 * time.Millisecond)
 
-	// Navigate down to target position
-	for i := 0; i < pos; i++ {
+	if loc.OnSubPage {
+		// Navigate to the page entry in top-level menu
+		for i := 0; i < loc.PagePosition; i++ {
+			if err := PressKey("down"); err != nil {
+				return err
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		// Enter the sub-page
+		if err := PressKey("right"); err != nil {
+			return err
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	// Navigate down to target position (within top-level or sub-page)
+	for i := 0; i < loc.Position; i++ {
 		if err := PressKey("down"); err != nil {
 			return err
 		}

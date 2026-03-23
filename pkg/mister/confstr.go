@@ -391,34 +391,50 @@ func parseExtensions(s string) []string {
 	return exts
 }
 
-// parseSubPage parses P[id],[name] or P[id]O entries.
+// parseSubPage parses P[id],[name] page entries and P[id]<cmd> sub-page items.
+// P1,Audio Settings → sub_page entry (navigable in top-level menu).
+// P1O34,Bass,Off,On → option on page 1 (displayed inside the sub-page).
 func parseSubPage(raw, rest string) *MenuItem {
-	// P can be followed by a digit and then a comma+name, or just a digit+letter combo
-	parts := strings.SplitN(rest, ",", 2)
-	id := 0
-	name := ""
+	// Extract page ID digits
+	i := 0
+	for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
+		i++
+	}
+	pageID := 0
+	if i > 0 {
+		pageID, _ = strconv.Atoi(rest[:i])
+	}
 
-	if len(parts) >= 1 {
-		// The first char(s) before comma are the page ID
-		idStr := parts[0]
-		if n, err := strconv.Atoi(idStr); err == nil {
-			id = n
-		} else if len(idStr) > 0 {
-			// Could be like "1O" — page 1, open
-			if idStr[0] >= '0' && idStr[0] <= '9' {
-				id = int(idStr[0] - '0')
-			}
+	remaining := rest[i:]
+
+	// Special case: P1- is a separator on the sub-page
+	if remaining == "-" {
+		return &MenuItem{Type: "separator", Raw: raw, PageID: pageID}
+	}
+
+	// If remaining starts with a command letter (O, T, etc.), this is an item
+	// on the sub-page, not a page entry. Parse the inner command and tag it
+	// with the page ID. E.g. P1O34,Bass,Off,On → option with PageID=1.
+	if len(remaining) > 0 && isCommandPrefix(remaining[0]) {
+		inner := parseMenuItem(remaining)
+		if inner != nil {
+			inner.Raw = raw
+			inner.PageID = pageID
+			return inner
 		}
 	}
-	if len(parts) >= 2 {
-		name = parts[1]
+
+	// Page entry: P1,Audio Settings
+	name := ""
+	if len(remaining) > 0 && remaining[0] == ',' {
+		name = remaining[1:]
 	}
 
 	return &MenuItem{
 		Type:   "sub_page",
 		Raw:    raw,
 		Name:   name,
-		PageID: id,
+		PageID: pageID,
 	}
 }
 
@@ -943,11 +959,32 @@ func NormalizeCoreName(runningName string) string {
 }
 
 // isOSDTopLevelItem returns true if the menu item is a visible, navigable
-// entry in the MiSTer OSD top-level menu. Skips labels, metadata, hidden
-// items, and sub-page entries.
+// entry in the MiSTer OSD top-level menu. Sub-page entries (P1,Audio Settings)
+// ARE top-level navigable items. Items belonging to a sub-page (PageID > 0)
+// are NOT top-level.
 func isOSDTopLevelItem(item MenuItem) bool {
+	// Sub-page entries are navigable in the top-level menu
+	if item.Type == "sub_page" {
+		return true
+	}
+	// Items on a sub-page are not top-level
+	if item.PageID > 0 {
+		return false
+	}
 	switch item.Type {
-	case "label", "joystick", "separator", "version", "info",
+	case "label", "joystick", "version", "info",
+		"option_hidden", "trigger_hidden",
+		"hide", "hide_inverted", "disable", "disable_inverted":
+		return false
+	}
+	return true
+}
+
+// isOSDSubPageItem returns true if the menu item is a navigable entry
+// within a sub-page in the MiSTer OSD.
+func isOSDSubPageItem(item MenuItem) bool {
+	switch item.Type {
+	case "label", "joystick", "version", "info",
 		"option_hidden", "trigger_hidden", "sub_page",
 		"hide", "hide_inverted", "disable", "disable_inverted":
 		return false
@@ -955,20 +992,30 @@ func isOSDTopLevelItem(item MenuItem) bool {
 	return true
 }
 
-// FindOSDItemPosition finds the 0-indexed position of a named target in the
-// MiSTer OSD top-level menu for a given core. The target is matched
-// case-insensitively against item Name and Label fields.
+// OSDItemLocation describes where a menu item is in the OSD hierarchy.
+type OSDItemLocation struct {
+	Position     int  // 0-indexed position within its context (top-level or sub-page)
+	OnSubPage    bool // true if item is on a sub-page
+	PageID       int  // sub-page ID (0 = top-level)
+	PagePosition int  // position of the page entry in top-level menu (for sub-page nav)
+}
+
+// FindOSDItemPosition finds the location of a named target in the MiSTer OSD
+// menu for a given core. Searches the top-level menu first, then sub-pages.
+// The target is matched case-insensitively against item Name and Label fields.
 // If cfgData is non-nil, hidden items are excluded from the count.
-func FindOSDItemPosition(db *ConfStrDB, coreName, target string, cfgData []byte) (int, error) {
+func FindOSDItemPosition(db *ConfStrDB, coreName, target string, cfgData []byte) (OSDItemLocation, error) {
 	osd := LookupCoreOSD(db, coreName)
 	if osd == nil {
-		return -1, fmt.Errorf("core not found in confstr db: %s", coreName)
+		return OSDItemLocation{}, fmt.Errorf("core not found in confstr db: %s", coreName)
 	}
 
 	// Re-parse from raw for most accurate menu structure
 	items := ParseConfStr(osd.ConfStrRaw)
-
 	targetLower := strings.ToLower(target)
+
+	// Search top-level items
+	pagePositions := map[int]int{} // pageID → top-level position
 	pos := 0
 	for _, item := range items {
 		if !isOSDTopLevelItem(item) {
@@ -977,12 +1024,41 @@ func FindOSDItemPosition(db *ConfStrDB, coreName, target string, cfgData []byte)
 		if cfgData != nil && !item.Visible(cfgData) {
 			continue
 		}
+		if item.Type == "sub_page" {
+			pagePositions[item.PageID] = pos
+		}
 		if strings.ToLower(item.Name) == targetLower || strings.ToLower(item.Label) == targetLower {
-			return pos, nil
+			return OSDItemLocation{Position: pos}, nil
 		}
 		pos++
 	}
-	return -1, fmt.Errorf("target %q not found in OSD menu for core %s", target, coreName)
+
+	// Search sub-page items
+	for pageID, pagePos := range pagePositions {
+		subPos := 0
+		for _, item := range items {
+			if item.PageID != pageID || item.Type == "sub_page" {
+				continue
+			}
+			if !isOSDSubPageItem(item) {
+				continue
+			}
+			if cfgData != nil && !item.Visible(cfgData) {
+				continue
+			}
+			if strings.ToLower(item.Name) == targetLower || strings.ToLower(item.Label) == targetLower {
+				return OSDItemLocation{
+					Position:     subPos,
+					OnSubPage:    true,
+					PageID:       pageID,
+					PagePosition: pagePos,
+				}, nil
+			}
+			subPos++
+		}
+	}
+
+	return OSDItemLocation{}, fmt.Errorf("target %q not found in OSD menu for core %s", target, coreName)
 }
 
 // LetterToBit converts a CONF_STR bit letter to a bit number.

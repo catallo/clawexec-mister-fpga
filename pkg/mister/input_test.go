@@ -786,3 +786,64 @@ func TestOSDNavigateTo_TargetNotFound(t *testing.T) {
 		t.Fatal("expected error for non-existent target")
 	}
 }
+
+func TestOSDNavigateTo_SubPage(t *testing.T) {
+	mock := withMockKeyboard(t)
+
+	// Core with sub-page: top-level has mount(0), sep(1), Aspect(2), VideoAudio(3), sep(4), Reset(5)
+	// Sub-page 1 has Widescreen(0), VCrop(1)
+	withTestConfStrDB(t, ConfStrDB{
+		Cores: []CoreOSD{
+			{CoreName: "TESTCORE", ConfStrRaw: "TESTCORE;;S0,CHDCUE,CD ROM;-;O12,Aspect Ratio,Original,Full Screen;P1,Video & Audio;-;R0,Reset;P1O34,Widescreen,No,Yes;P1O5,Vertical Crop,No,Yes"},
+		},
+	})
+
+	err := OSDNavigateTo("TESTCORE", "Widescreen")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events := mock.getEvents()
+	// F12 (down+up=2) + 3x Down to page entry (3*2=6) + Right to enter sub-page (2)
+	// + 0x Down (item is at position 0) + Enter (2) = 12 events
+	expectedCount := 2 + 3*2 + 2 + 0 + 2
+	if len(events) != expectedCount {
+		t.Fatalf("expected %d events, got %d: %v", expectedCount, len(events), events)
+	}
+	// First event: F12
+	if events[0].code != KeyNames["f12"] {
+		t.Errorf("first event should be F12, got code %d", events[0].code)
+	}
+	// After 3 downs, should press Right
+	rightIdx := 2 + 3*2 // F12(2) + 3 downs(6)
+	if events[rightIdx].code != KeyNames["right"] {
+		t.Errorf("expected Right arrow at index %d, got code %d", rightIdx, events[rightIdx].code)
+	}
+	// Last two events: Enter
+	if events[len(events)-2].code != KeyNames["enter"] {
+		t.Errorf("second-to-last event should be Enter, got code %d", events[len(events)-2].code)
+	}
+}
+
+func TestOSDNavigateTo_SubPageDeepItem(t *testing.T) {
+	mock := withMockKeyboard(t)
+
+	withTestConfStrDB(t, ConfStrDB{
+		Cores: []CoreOSD{
+			{CoreName: "TESTCORE", ConfStrRaw: "TESTCORE;;S0,CHDCUE,CD ROM;P1,Settings;R0,Reset;P1O12,Opt1,A,B;P1O34,Opt2,C,D;P1O5,Opt3,E,F"},
+		},
+	})
+
+	// Navigate to Opt3 which is at sub-page position 2
+	err := OSDNavigateTo("TESTCORE", "Opt3")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events := mock.getEvents()
+	// F12(2) + 1x Down to page entry(2) + Right(2) + 2x Down within sub-page(4) + Enter(2) = 12
+	expectedCount := 2 + 1*2 + 2 + 2*2 + 2
+	if len(events) != expectedCount {
+		t.Fatalf("expected %d events, got %d: %v", expectedCount, len(events), events)
+	}
+}
