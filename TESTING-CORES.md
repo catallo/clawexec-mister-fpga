@@ -42,7 +42,7 @@ This table grows as testing reveals more cores that need special handling.
 | PSX | ⬜ | ⬜ | ✅ | ⬜ | ⬜ | |
 | Saturn | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | N64 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
-| PCEngine | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| PCEngine (TGFX16) | ✅ | ✅ | ✅ | ➖ | ⚠️ | Screenshot = schwarz (HW); TGFX16-Alias-Bug gefixt |
 | TurboGrafx16 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | TGFX16CD | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | SuperGrafx | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
@@ -96,6 +96,15 @@ This table grows as testing reveals more cores that need special handling.
 - **VHD cores**: MSX, some X68000 — no individual game launch, boots into OS
 
 ## Test Log
+
+### 2026-03-24 — PCEngine / TurboGrafx16 (TGFX16)
+- Search "bonk" --system TGFX16: ✅ 26 Ergebnisse
+- Launch "Bonk's Adventure": ✅ Läuft (Bonk III gestartet)
+- OSD Navigate "Reset": ✅ `Navigated to: Reset (core: TurboGrafx16)`
+- OSD Sub-page: ➖ nicht getestet (wenige Sub-Pages)
+- Screenshot: ⚠️ schwarzes Bild (Framebuffer-Problem, nicht Core-Problem)
+- **Bug:** TGFX16 Ordner nicht als System erkannt → Alias `TGFX16` in systemDefaults hinzugefügt
+
 
 Record test sessions here with date and findings.
 

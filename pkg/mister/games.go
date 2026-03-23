@@ -56,6 +56,7 @@ var systemDefaults = map[string]SystemConfig{
 	"MasterSystem":    {Core: "_Console/SMS", Delay: 3, Type: "f", Index: 1, Extensions: []string{".sms"}},
 	"GameGear":        {Core: "_Console/SMS", Delay: 3, Type: "f", Index: 1, Extensions: []string{".gg"}, SetName: "GameGear"},
 	"TurboGrafx16":    {Core: "_Console/TurboGrafx16", Delay: 1, Type: "f", Index: 0, Extensions: []string{".pce"}},
+	"TGFX16":          {Core: "_Console/TurboGrafx16", Delay: 1, Type: "f", Index: 0, Extensions: []string{".pce"}},
 	"PCEngine":        {Core: "_Console/TurboGrafx16", Delay: 1, Type: "f", Index: 0, Extensions: []string{".pce", ".sgx"}},
 	"TGFX16CD":        {Core: "_Console/TurboGrafx16", Delay: 1, Type: "s", Index: 0, Extensions: []string{".chd", ".cue", ".bin"}},
 	"SuperGrafx":      {Core: "_Console/TurboGrafx16", Delay: 1, Type: "f", Index: 0, Extensions: []string{".sgx"}},
