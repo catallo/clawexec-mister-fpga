@@ -407,9 +407,13 @@ func parseSubPage(raw, rest string) *MenuItem {
 
 	remaining := rest[i:]
 
-	// Special case: P1- is a separator on the sub-page
-	if remaining == "-" {
-		return &MenuItem{Type: "separator", Raw: raw, PageID: pageID}
+	// Special case: P1- or P1-,label is a separator on the sub-page
+	if len(remaining) > 0 && remaining[0] == '-' {
+		name := ""
+		if idx := strings.Index(remaining, ","); idx >= 0 {
+			name = remaining[idx+1:]
+		}
+		return &MenuItem{Type: "separator", Raw: raw, PageID: pageID, Name: name}
 	}
 
 	// If remaining starts with a command letter (O, T, etc.), this is an item
@@ -972,7 +976,7 @@ func isOSDTopLevelItem(item MenuItem) bool {
 		return false
 	}
 	switch item.Type {
-	case "label", "joystick", "version", "info",
+	case "label", "joystick", "version", "info", "separator",
 		"option_hidden", "trigger_hidden",
 		"hide", "hide_inverted", "disable", "disable_inverted":
 		return false
@@ -985,19 +989,30 @@ func isOSDTopLevelItem(item MenuItem) bool {
 func isOSDSubPageItem(item MenuItem) bool {
 	switch item.Type {
 	case "label", "joystick", "version", "info",
-		"option_hidden", "trigger_hidden", "sub_page",
+		"sub_page", "separator",
 		"hide", "hide_inverted", "disable", "disable_inverted":
 		return false
+	case "file_load", "file_load_core", "mount":
+		// File load items on sub-pages are almost always conditionally
+		// hidden by runtime FPGA status bits we can't read. Skip them
+		// to avoid position miscalculation.
+		if item.PageID > 0 && len(item.HideConditions) > 0 {
+			return false
+		}
 	}
+	// option_hidden and trigger_hidden are navigable on sub-pages
+	// (MiSTer "hidden" means conditionally visible, not permanently hidden)
 	return true
 }
 
 // OSDItemLocation describes where a menu item is in the OSD hierarchy.
 type OSDItemLocation struct {
-	Position     int  // 0-indexed position within its context (top-level or sub-page)
-	OnSubPage    bool // true if item is on a sub-page
-	PageID       int  // sub-page ID (0 = top-level)
-	PagePosition int  // position of the page entry in top-level menu (for sub-page nav)
+	Position      int  // 0-indexed position within its context (top-level or sub-page)
+	OnSubPage     bool // true if item is on a sub-page
+	PageID        int  // sub-page ID (0 = top-level)
+	PagePosition  int  // position of the page entry in top-level menu (for sub-page nav)
+	BottomOffset  int  // distance from bottom of menu (for bottom-up navigation)
+	UseBottomNav  bool // true if item should be navigated from bottom (more reliable)
 }
 
 // FindOSDItemPosition finds the location of a named target in the MiSTer OSD
@@ -1033,6 +1048,8 @@ func FindOSDItemPosition(db *ConfStrDB, coreName, target string, cfgData []byte)
 		pos++
 	}
 
+	totalTopLevel := pos
+
 	// Search sub-page items
 	for pageID, pagePos := range pagePositions {
 		subPos := 0
@@ -1048,10 +1065,11 @@ func FindOSDItemPosition(db *ConfStrDB, coreName, target string, cfgData []byte)
 			}
 			if strings.ToLower(item.Name) == targetLower || strings.ToLower(item.Label) == targetLower {
 				return OSDItemLocation{
-					Position:     subPos,
-					OnSubPage:    true,
-					PageID:       pageID,
-					PagePosition: pagePos,
+					Position:      subPos,
+					OnSubPage:     true,
+					PageID:        pageID,
+					PagePosition:  pagePos,
+					BottomOffset:  totalTopLevel - 1 - pagePos,
 				}, nil
 			}
 			subPos++

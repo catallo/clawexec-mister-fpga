@@ -608,7 +608,9 @@ func OSDNavigateTo(coreName, target string) error {
 		return fmt.Errorf("loading confstr db: %w", err)
 	}
 
-	loc, err := FindOSDItemPosition(db, coreName, target, nil)
+	// Read core CFG to determine which items are visible
+	cfgData, _ := ReadCFG(CFGPath(NormalizeCoreName(coreName)))
+	loc, err := FindOSDItemPosition(db, coreName, target, cfgData)
 	if err != nil {
 		return err
 	}
@@ -620,37 +622,71 @@ func OSDNavigateTo(coreName, target string) error {
 	time.Sleep(500 * time.Millisecond)
 
 	if loc.OnSubPage {
-		// Navigate to the page entry in top-level menu
-		for i := 0; i < loc.PagePosition; i++ {
-			if err := PressKey("down"); err != nil {
+		// Navigate to the sub-page entry from the bottom (more reliable
+		// because runtime-hidden items at the top can't be predicted).
+		// Up from top wraps to bottom. MiSTer adds an implicit "Exit"
+		// entry below the last conf_str item, so we need 2x Up to reach
+		// the last real item (first Up → Exit, second Up → last item).
+		for i := 0; i < 2; i++ {
+			if err := PressKey("up"); err != nil {
+				return err
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		for i := 0; i < loc.BottomOffset; i++ {
+			if err := PressKey("up"); err != nil {
 				return err
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
 		// Enter the sub-page
-		if err := PressKey("right"); err != nil {
+		if err := PressKey("enter"); err != nil {
 			return err
 		}
 		time.Sleep(300 * time.Millisecond)
-	}
-
-	// Navigate down to target position (within top-level or sub-page)
-	for i := 0; i < loc.Position; i++ {
-		if err := PressKey("down"); err != nil {
-			return err
+		// Navigate down to target within sub-page
+		for i := 0; i < loc.Position; i++ {
+			if err := PressKey("down"); err != nil {
+				return err
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
-		time.Sleep(100 * time.Millisecond)
+	} else if loc.UseBottomNav {
+		// For items near the bottom (Reset, sub_pages), navigate from bottom
+		// +1 Up for implicit "Exit" entry
+		for i := 0; i < 2; i++ {
+			if err := PressKey("up"); err != nil {
+				return err
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		for i := 0; i < loc.BottomOffset; i++ {
+			if err := PressKey("up"); err != nil {
+				return err
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	} else {
+		// Navigate down from top for regular items
+		for i := 0; i < loc.Position; i++ {
+			if err := PressKey("down"); err != nil {
+				return err
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 
-	// Confirm selection
-	return PressKey("enter")
+	return nil
 }
 
 // OSDResetByCore performs a soft reset via the OSD menu for a specific core.
 // Uses the conf_str database to find the correct Reset position.
 // This preserves mounted disk images unlike the hardware reset combo.
 func OSDResetByCore(coreName string) error {
-	return OSDNavigateTo(coreName, "Reset")
+	if err := OSDNavigateTo(coreName, "Reset"); err != nil {
+		return err
+	}
+	return PressKey("enter")
 }
 
 // OSDReset performs a soft reset via the OSD menu using a hardcoded
