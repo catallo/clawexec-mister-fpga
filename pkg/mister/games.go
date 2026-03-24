@@ -355,6 +355,12 @@ func LaunchGame(game GameInfo) error {
 		return err
 	}
 
+	// Clean up MGL file after MiSTer has read it (avoid cluttering core browser)
+	go func() {
+		time.Sleep(5 * time.Second)
+		os.Remove(launchPath)
+	}()
+
 	// For systems with post-launch actions (e.g. floppy-disk cores), perform
 	// an OSD Reset after launch so the core boots from the mounted disk
 	// instead of falling into built-in BASIC/ROM.
