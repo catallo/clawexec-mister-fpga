@@ -615,6 +615,12 @@ func OSDNavigateTo(coreName, target string) error {
 		return err
 	}
 
+	// Ensure OSD is closed first, then open it.
+	// If OSD was already open (e.g. from a previous navigate), F12 would close it.
+	// Escape closes the OSD if open, does nothing if closed.
+	PressKey("Escape")
+	time.Sleep(200 * time.Millisecond)
+
 	// Open OSD
 	if err := PressKey("F12"); err != nil {
 		return fmt.Errorf("OSD open: %w", err)

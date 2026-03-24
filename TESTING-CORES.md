@@ -39,7 +39,7 @@ This table grows as testing reveals more cores that need special handling.
 | Gameboy | ⬜ | ⬜ | ✅ | ⬜ | ⬜ | file_load heuristic reverted |
 | GBC | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | GBA | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
-| PSX | ⬜ | ⬜ | ✅ | ⬜ | ⬜ | |
+| PSX | ✅ | ✅ | ✅ | ❌ | ⬜ | Sub-page nav off-by-N (Rotate → Horizontal Crop) |
 | Saturn | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | N64 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | PCEngine (TGFX16) | ✅ | ✅ | ✅ | ✅ | ⚠️ | Aspect ratio Sub-page ✅; TGFX16-Alias + Apostroph-Bug gefixt |
@@ -106,6 +106,15 @@ This table grows as testing reveals more cores that need special handling.
 - **Bug:** TGFX16 Ordner nicht als System erkannt → Alias `TGFX16` in systemDefaults hinzugefügt
 - **Bug:** Apostrophe in Dateinamen (Bomberman '94) → `&#39;` XML-Escape in MGL-Pfaden bricht MiSTer → Fix: raw single quotes
 - OSD Sub-page "Aspect ratio": ✅ Cursor korrekt positioniert
+
+### 2026-03-24 — PSX
+- Search "tekken": ✅ 2 Ergebnisse
+- Launch "Tekken 3": ✅ Spiel läuft
+- OSD Navigate "Aspect ratio" (sub-page): ✅ korrekt
+- OSD Navigate "Rotate" (sub-page): ❌ Cursor auf "Horizontal Crop" statt "Rotate"
+- cfg-read: ✅ Render 24 Bit = On (DE-prefix fix)
+- **Bug:** OSD muss vor Navigate geschlossen werden → Escape vor F12 hinzugefügt
+- **Bug:** Sub-page Navigation off-by-N bei tieferen Items auf Video & Audio Seite
 
 
 Record test sessions here with date and findings.
