@@ -29,7 +29,7 @@ This table grows as testing reveals more cores that need special handling.
 
 | Core | Search | Launch | OSD Nav | OSD Sub | Screenshot | Notes |
 |------|--------|--------|---------|---------|------------|-------|
-| NES | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | Known: off-by-one with hidden palette item |
+| NES | ✅ | ✅ | ❌ | ❌ | ⬜ | Known off-by-one (hidden palette); Mega Man 2 tested |
 | SNES | ⬜ | ⬜ | ✅ | ✅ | ⬜ | Aspect Ratio tested |
 | MegaDrive | ⬜ | ⬜ | ✅ | ⬜ | ⬜ | |
 | Genesis | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
@@ -115,6 +115,12 @@ This table grows as testing reveals more cores that need special handling.
 - cfg-read: ✅ Render 24 Bit = On (DE-prefix fix)
 - **Bug:** OSD muss vor Navigate geschlossen werden → Escape vor F12 hinzugefügt
 - **Bug:** Sub-page Navigation off-by-N bei tieferen Items auf Video & Audio Seite
+
+### 2026-03-24 — NES
+- Search "mega man 2": ✅ 5+ Ergebnisse
+- Launch "Mega Man 2": ✅ Spiel läuft
+- OSD Navigate: ❌ Known off-by-one (hidden Custom Palette file_load)
+- OSD Sub-page: ❌ Known off-by-one
 
 
 Record test sessions here with date and findings.
