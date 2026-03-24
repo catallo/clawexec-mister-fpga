@@ -324,7 +324,7 @@ func toolsList() []ToolDef {
 		},
 		{
 			Name:        "mister_system_info",
-			Description: "Get detailed system information including core config, keyboard mapping notes, and full OSD menu structure parsed from conf_str. Useful for understanding core capabilities before interacting.",
+			Description: "IMPORTANT: Always call this tool FIRST before launching games, navigating OSD, or interacting with any core. Returns detailed system information including supported file formats, keyboard mapping notes, launch behavior (e.g. floppy cores need OSD reset after launch), and full OSD menu structure parsed from conf_str. Essential for understanding core capabilities and quirks before any interaction.",
 			InputSchema: map[string]interface{}{
 				"type":     "object",
 				"required": []string{"system"},

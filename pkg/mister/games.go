@@ -85,7 +85,7 @@ var systemDefaults = map[string]SystemConfig{
 
 	// === Computers ===
 	"Amiga":       {Core: "_Computer/Minimig", Delay: 1, Type: "s", Index: 0, Extensions: []string{".adf", ".hdf"}},
-	"C64":         {Core: "_Computer/C64", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64", ".t64"}},
+	"C64":         {Core: "_Computer/C64", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64", ".t64", ".g64", ".tap", ".d81"}, PostLaunch: &PostLaunchConfig{Notes: "PRG: auto-injected (no disk needed). CRT: cartridge, instant boot. D64: 1541 floppy image (LOAD*,8,1 then RUN). G64: GCR-encoded floppy (copy-protected titles). T64: tape container. TAP: datasette recording (slow, authentic). D81: 1581 3.5 inch floppy. Joystick: most games use Port 2."}},
 	"C128":        {Core: "_Computer/C128", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64"}},
 	"VIC20":       {Core: "_Computer/VIC20", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64"}},
 	"AtariST":     {Core: "_Computer/AtariST", Delay: 1, Type: "s", Index: 0, Extensions: []string{".st", ".msa", ".stx"}},

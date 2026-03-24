@@ -279,6 +279,36 @@ func TestBuildRequest_InputUnknownMode(t *testing.T) {
 	}
 }
 
+func TestBuildRequest_SystemInfo(t *testing.T) {
+	req, err := BuildRequest("system-info", []string{"C64"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req["mister"] != "system_info" {
+		t.Errorf("expected mister=system_info, got %v", req["mister"])
+	}
+	if req["system"] != "C64" {
+		t.Errorf("expected system=C64, got %v", req["system"])
+	}
+}
+
+func TestBuildRequest_SystemInfoMultiWord(t *testing.T) {
+	req, err := BuildRequest("system-info", []string{"PC", "8801"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req["system"] != "PC 8801" {
+		t.Errorf("expected system='PC 8801', got %v", req["system"])
+	}
+}
+
+func TestBuildRequest_SystemInfoEmpty(t *testing.T) {
+	_, err := BuildRequest("system-info", nil)
+	if err == nil {
+		t.Fatal("expected error for empty system-info")
+	}
+}
+
 func TestHelpOutput(t *testing.T) {
 	// Verify printHelp doesn't panic (basic smoke test)
 	// We can't easily capture stdout in a test without more infrastructure,
