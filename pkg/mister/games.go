@@ -17,6 +17,16 @@ type PostLaunchConfig struct {
 	Notes    string `json:"notes,omitempty"`     // usage notes for this system
 }
 
+// FormatOverride allows different MGL parameters based on file extension.
+type FormatOverride struct {
+	Type           string   `json:"type"`            // "f" or "s"
+	Index          int      `json:"index"`
+	Extensions     []string `json:"extensions"`      // which extensions trigger this override
+	PostLaunchText string   `json:"post_launch_text,omitempty"` // text to type after launch (e.g. LOAD command)
+	PostLaunchRun  bool     `json:"post_launch_run,omitempty"`  // type RUN after PostLaunchText
+	DelayMs        int      `json:"delay_ms,omitempty"`         // delay before typing (0 = 6000ms default)
+}
+
 // SystemConfig defines how to launch games for a given system.
 type SystemConfig struct {
 	Core       string           `json:"core"`
@@ -25,7 +35,8 @@ type SystemConfig struct {
 	Index      int              `json:"index"`
 	Extensions []string         `json:"extensions"`
 	SetName    string           `json:"set_name,omitempty"`    // optional, for systems sharing a core (GBC, GameGear, etc.)
-	PostLaunch *PostLaunchConfig `json:"post_launch,omitempty"` // post-launch actions (OSD reset, notes)
+	PostLaunch      *PostLaunchConfig `json:"post_launch,omitempty"`      // post-launch actions (OSD reset, notes)
+	FormatOverrides []FormatOverride  `json:"format_overrides,omitempty"` // extension-based MGL parameter overrides
 }
 
 // GameInfo represents a single ROM file.
@@ -85,9 +96,16 @@ var systemDefaults = map[string]SystemConfig{
 
 	// === Computers ===
 	"Amiga":       {Core: "_Computer/Minimig", Delay: 1, Type: "s", Index: 0, Extensions: []string{".adf", ".hdf"}},
-	"C64":         {Core: "_Computer/C64", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64", ".t64", ".g64", ".tap", ".d81"}, PostLaunch: &PostLaunchConfig{Notes: "PRG: auto-injected (no disk needed). CRT: cartridge, instant boot. D64: 1541 floppy image (LOAD*,8,1 then RUN). G64: GCR-encoded floppy (copy-protected titles). T64: tape container. TAP: datasette recording (slow, authentic). D81: 1581 3.5 inch floppy. Joystick: most games use Port 2."}},
-	"C128":        {Core: "_Computer/C128", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64"}},
-	"VIC20":       {Core: "_Computer/VIC20", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64"}},
+	"C64":         {Core: "_Computer/C64", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64", ".t64", ".g64", ".tap", ".d81"}, PostLaunch: &PostLaunchConfig{Notes: "PRG: auto-injected (no disk needed). CRT: cartridge, instant boot. D64: 1541 floppy image. G64: GCR-encoded floppy. T64: tape container. TAP: datasette recording. D81: 1581 3.5 inch floppy. Joystick: most games use Port 2."}, FormatOverrides: []FormatOverride{
+		{Type: "s", Index: 0, Extensions: []string{".d64", ".g64"}, PostLaunchText: "load\"*\",8,1\n", PostLaunchRun: true, DelayMs: 6000},
+		{Type: "s", Index: 0, Extensions: []string{".d81"}, PostLaunchText: "load\"*\",8,1\n", PostLaunchRun: true, DelayMs: 6000},
+	}},
+	"C128":        {Core: "_Computer/C128", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64"}, FormatOverrides: []FormatOverride{
+		{Type: "s", Index: 0, Extensions: []string{".d64"}, PostLaunchText: "load\"*\",8,1\n", PostLaunchRun: true, DelayMs: 6000},
+	}},
+	"VIC20":       {Core: "_Computer/VIC20", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64"}, FormatOverrides: []FormatOverride{
+		{Type: "s", Index: 0, Extensions: []string{".d64"}, PostLaunchText: "load\"*\",8,1\n", PostLaunchRun: true, DelayMs: 6000},
+	}},
 	"AtariST":     {Core: "_Computer/AtariST", Delay: 1, Type: "s", Index: 0, Extensions: []string{".st", ".msa", ".stx"}},
 	"MSX":         {Core: "_Computer/MSX", Delay: 1, Type: "f", Index: 1, Extensions: []string{".rom", ".mx1", ".mx2"}},
 	"ZXSpectrum":  {Core: "_Computer/ZX-Spectrum", Delay: 1, Type: "f", Index: 1, Extensions: []string{".tap", ".tzx", ".z80", ".sna"}},
@@ -117,10 +135,13 @@ func GetSystemConfig(system string) (SystemConfig, bool) {
 	discovered := getDiscoveredSystems()
 	if ds, ok := discovered[strings.ToLower(system)]; ok {
 		cfg := ds.Config
-		// Merge PostLaunch from systemDefaults if not set by discovery
-		if cfg.PostLaunch == nil {
-			if defCfg, ok := getDefaultConfig(system); ok && defCfg.PostLaunch != nil {
+		// Merge PostLaunch and FormatOverrides from systemDefaults if not set by discovery
+		if defCfg, ok := getDefaultConfig(system); ok {
+			if cfg.PostLaunch == nil && defCfg.PostLaunch != nil {
 				cfg.PostLaunch = defCfg.PostLaunch
+			}
+			if len(cfg.FormatOverrides) == 0 && len(defCfg.FormatOverrides) > 0 {
+				cfg.FormatOverrides = defCfg.FormatOverrides
 			}
 		}
 		return cfg, true
@@ -266,6 +287,19 @@ type mglFileRef struct {
 }
 
 // GenerateMGL generates MGL XML content for launching a game.
+// getFormatOverride returns the FormatOverride matching the file extension, if any.
+func getFormatOverride(cfg SystemConfig, path string) *FormatOverride {
+	ext := strings.ToLower(filepath.Ext(path))
+	for i := range cfg.FormatOverrides {
+		for _, e := range cfg.FormatOverrides[i].Extensions {
+			if strings.ToLower(e) == ext {
+				return &cfg.FormatOverrides[i]
+			}
+		}
+	}
+	return nil
+}
+
 func GenerateMGL(game GameInfo) string {
 	cfg, ok := GetSystemConfig(game.System)
 	if !ok || cfg.Core == "" {
@@ -276,12 +310,19 @@ func GenerateMGL(game GameInfo) string {
 	// We go up 5 levels to be safe (mrext convention), then use absolute path.
 	mglPath := "../../../../.." + game.Path
 
+	mglType := cfg.Type
+	mglIndex := cfg.Index
+	if ov := getFormatOverride(cfg, game.Path); ov != nil {
+		mglType = ov.Type
+		mglIndex = ov.Index
+	}
+
 	m := mglFile{
 		Rbf: cfg.Core,
 		File: mglFileRef{
 			Delay: cfg.Delay,
-			Type:  cfg.Type,
-			Index: cfg.Index,
+			Type:  mglType,
+			Index: mglIndex,
 			Path:  mglPath,
 		},
 	}
@@ -374,6 +415,30 @@ func LaunchGame(game GameInfo) error {
 		go func() {
 			time.Sleep(delay)
 			if err := OSDResetByCore(coreName); err != nil { log.Printf("[misterclaw] OSD reset failed: %v", err) } else { log.Printf("[misterclaw] OSD reset completed for %s", coreName) }
+		}()
+	}
+
+	// Format-specific post-launch: type commands (e.g. LOAD"*",8,1 for D64)
+	if ov := getFormatOverride(cfg, game.Path); ov != nil && ov.PostLaunchText != "" {
+		delay := time.Duration(ov.DelayMs) * time.Millisecond
+		if delay == 0 {
+			delay = 6 * time.Second
+		}
+		go func() {
+			time.Sleep(delay)
+			log.Printf("[misterclaw] typing post-launch text for %s", game.Name)
+			if err := TypeText(ov.PostLaunchText); err != nil {
+				log.Printf("[misterclaw] post-launch type failed: %v", err)
+				return
+			}
+			if ov.PostLaunchRun {
+				// Wait for the program to load before typing RUN
+				time.Sleep(10 * time.Second)
+				log.Printf("[misterclaw] typing RUN for %s", game.Name)
+				if err := TypeText("run\n"); err != nil {
+					log.Printf("[misterclaw] post-launch RUN failed: %v", err)
+				}
+			}
 		}()
 	}
 
