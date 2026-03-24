@@ -98,7 +98,7 @@ var systemDefaults = map[string]SystemConfig{
 
 	// === Computers ===
 	"Amiga":       {Core: "_Computer/Minimig", Delay: 1, Type: "s", Index: 0, Extensions: []string{".adf", ".hdf"}},
-	"C64":         {Core: "_Computer/C64", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64", ".t64", ".g64", ".tap", ".d81"}, PostLaunch: &PostLaunchConfig{Notes: "PRG: auto-injected (no disk needed). CRT: cartridge, instant boot. D64: 1541 floppy image. G64: GCR-encoded floppy. T64: tape container. TAP: datasette recording. D81: 1581 3.5 inch floppy. Joystick: most games use Port 2."}, FormatOverrides: []FormatOverride{
+	"C64":         {Core: "_Computer/C64", Delay: 1, Type: "f", Index: 1, Extensions: []string{".prg", ".crt", ".d64", ".t64", ".g64", ".tap", ".d81"}, PostLaunch: &PostLaunchConfig{Notes: "Auto-launch: D64/G64/T64/D81 are mounted as disk and auto-started via Alt+ESC (LOAD\"*\"+RUN). PRG files are directly injected into RAM. CRT cartridges boot instantly. TAP (datasette) is NOT auto-launchable yet — DolphinDOS redirects all LOAD commands to the disk drive (device 8). Joystick: most games use Port 2. Keyboard: F2/F4/F6/F8 auto-Shift, Alt/Tab=C= key, PgUp=Tape Play/Pause, F9=Arrow-up, F11=Restore."}, FormatOverrides: []FormatOverride{
 		{Type: "s", Index: 0, Extensions: []string{".d64", ".g64", ".t64", ".d81"}, PostLaunchCombo: []string{"leftalt", "esc"}, DelayMs: 8000},
 		{Type: "f", Index: 1, Extensions: []string{".tap"}, PostLaunchText: "load\n", PostLaunchKeys: []string{"pageup"}, DelayMs: 8000},
 	}},
