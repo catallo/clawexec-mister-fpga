@@ -88,7 +88,7 @@ var systemDefaults = map[string]SystemConfig{
 	"Vectrex":         {Core: "_Console/Vectrex", Delay: 1, Type: "f", Index: 1, Extensions: []string{".vec", ".bin"}},
 	"ChannelF":        {Core: "_Console/ChannelF", Delay: 1, Type: "f", Index: 1, Extensions: []string{".bin", ".rom"}},
 	"MegaCD":          {Core: "_Console/MegaCD", Delay: 1, Type: "s", Index: 0, Extensions: []string{".chd", ".cue", ".bin"}},
-	"NeoGeo":          {Core: "_Console/NeoGeo", Delay: 1, Type: "f", Index: 1, Extensions: []string{".neo", ".zip"}},
+	"NeoGeo":          {Core: "_Console/NeoGeo", Delay: 1, Type: "f", Index: 1, Extensions: []string{".neo", ".zip"}, PostLaunch: &PostLaunchConfig{Notes: "No special setup needed. ZIP ROM-sets (MAME format) and .neo files are loaded directly via file injection — games boot instantly. Supports AES (console) and MVS (arcade) mode via OSD. UniBIOS or original BIOS selectable."}},
 	"SGB":             {Core: "_Console/SGB", Delay: 2, Type: "f", Index: 1, Extensions: []string{".gb", ".gbc"}},
 	"Saturn":          {Core: "_Console/Saturn", Delay: 1, Type: "s", Index: 0, Extensions: []string{".chd", ".cue"}},
 	"Jaguar":          {Core: "_Console/Jaguar", Delay: 1, Type: "f", Index: 1, Extensions: []string{".j64", ".rom"}},

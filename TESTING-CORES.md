@@ -48,7 +48,7 @@ This table grows as testing reveals more cores that need special handling.
 | SuperGrafx | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | MegaCD | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | S32X | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
-| NeoGeo | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
+| NeoGeo | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ZIP (MAME) + .neo via file injection. AES/MVS mode via OSD. |
 | Atari2600 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | Atari5200 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
 | Atari7800 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | |
